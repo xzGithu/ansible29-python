@@ -6,10 +6,8 @@
 
 import sys
 import json
-import shutil
-# 用于读取YAML和JSON格式的文件
-from ansible.parsing.dataloader import DataLoader
-# 用于存储各类变量信息
+import shutil# 用于读取YAML和JSON格式的文件
+from ansible.parsing.dataloader import DataLoader# 用于存储各类变量信息
 from ansible.vars.manager import VariableManager
 from ansible import constants as C  # 用于获取ansible内置的一些常量
 from ansible.module_utils.common.collections import ImmutableDict  # 用于自定制一些选项
