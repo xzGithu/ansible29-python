@@ -1,7 +1,7 @@
 # coding:utf-8
 
 """
-通过API动态生成ansible资产信息，用于集群组建的部署，软件的安装
+通过API动态生成ansible资产信息，用于集群组建的部署，软件的安装,
 """
 
 import sys
