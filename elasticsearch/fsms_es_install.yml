@@ -35,7 +35,8 @@
       #become_method: su
       file: >-
         dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
-      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
     - name: exit with can not create directory
       fail: msg="no permission to mkdir"
       when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
@@ -43,12 +44,12 @@
 ### backup and modify the sysctl.conf file
     - name: backup sysctl.conf file
       become: yes
-      become_method: su
+      #become_method: su
       shell: echo y|cp /etc/sysctl.conf /etc/sysctl.conf.ansible.es
-      when: ansible_become_pass is defined
+      #when: ansible_become_pass is defined
     - name: modify sysctl.conf file
       become: yes
-      become_method: su
+      #become_method: su
       sysctl:
         name: "{{ item.name }}"
         value: "{{ item.value }}"
@@ -61,16 +62,16 @@
         - { name: "net.ipv4.tcp_tw_reuse", value: 1, reload: no }
         - { name: "net.ipv4.tcp_tw_recycle", value: 1, reload: no }
         - { name: "net.ipv4.tcp_fin_timeout", value: 30, reload: yes }
-      when: ansible_become_pass is defined
+      #when: ansible_become_pass is defined
 ### backup and modify /etc/security/limits.conf file
     - name: backup limits.conf file
       become: yes
-      become_method: su
+      #become_method: su
       shell: echo y|cp /etc/security/limits.conf /etc/security/limits.conf.ansible.es
-      when: ansible_become_pass is defined
+      #when: ansible_become_pass is defined
     - name: modify {{ansible_ssh_user}} limits
       become: yes
-      become_method: su
+      #become_method: su
       pam_limits:
         domain: "{{ansible_ssh_user}}"
         limit_type: "{{ item.limit_type }}"
@@ -83,7 +84,7 @@
         - { limit_type: hard, limit_item: memlock, value: unlimited }
         - { limit_type: soft, limit_item: nproc, value: 65535 }
         - { limit_type: hard, limit_item: nproc, value: 65535 }
-      when: ansible_become_pass is defined
+      #when: ansible_become_pass is defined
 
 ### install java
     - name: check java environment

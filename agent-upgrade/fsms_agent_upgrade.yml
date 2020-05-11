@@ -13,7 +13,8 @@
 #      become_method: su
       file: >-
         dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
-      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
     - name: exit with can not create install directory
       fail: msg="no permission to create {{instpath}}"
       when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
@@ -23,11 +24,11 @@
       register: result
     - name: stop ultraagent process
       shell: ps -ef |grep ultraagent|grep -v python|grep {{ansible_ssh_user}}|grep -v grep|awk '{print $2}'|xargs kill -9
-      when: register.stdout|int>0
+      when: result.stdout|int>0
 
     - name: backup old ultraagent
       become: yes
-      shell: echo y| mv {{preinstpath}} {{preinstpath}}-bakup
+      shell: echo y| mv {{prepath}}/agent {{prepath}}/agent-backup
     - name: install new ultraagent
       unarchive: src=/opt/ansible/agent-upgrade/packages/ultraagent.tar.gz dest={{instpath}}
     - name: modify configure file

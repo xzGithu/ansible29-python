@@ -3,21 +3,6 @@
   become: no
   gather_facts: no
   tasks:
-### check path status
-### make install path
-    - name: check whether exist {{instpath}}
-      stat:
-        path: '{{ instpath }}'
-      register: pbig
-    - name: create {{instpath}}
-      become: yes
-#      become_method: su
-      file: >-
-        dest={{ instpath }} mode=0777 state=directory owner={{ ansible_ssh_user }}
-      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
-    - name: exit with can not create install path
-      fail: msg="no permission to create {{instpath}}"
-      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
 ### check whether hbase is running
     - name: check hbase running from {{instpath}}/zookeeper
       shell: ps -ef|grep {{ instpath }}/hbase|grep -v grep|wc -l
@@ -34,6 +19,22 @@
     - name: exit with already installed hbase
       fail: msg="already install hbase under this dir. To install give a new dir"
       when: p.stat.isdir is defined and p.stat.isdir
+### check path status
+### make install path
+    - name: check whether exist {{instpath}}
+      stat:
+        path: '{{ instpath }}'
+      register: pbig
+    - name: create {{instpath}}
+      become: yes
+#      become_method: su
+      file: >-
+        dest={{ instpath }} mode=0777 state=directory owner={{ ansible_ssh_user }}
+      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create install path
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+
 ### modify nofile for user
     - name: check user {{ansible_ssh_user}} soft nofile numbers
       shell: cat /etc/security/limits.conf|grep {{ansible_ssh_user}}|grep nofile|grep soft|awk '{print $4}'
@@ -55,12 +56,12 @@
 ### configure etc/hosts for every host
     - name: backup etc hosts
       become: yes
-      become_method: su
-      shell: cp /etc/hosts /etc/hosts.ansible.hbase
-      when: ansible_become_pass is defined
+      #become_method: su
+      shell: echo y|cp /etc/hosts /etc/hosts.ansible.hbase
+      #when: ansible_become_pass is defined
     - name: modify etc/hosts file
       become: yes
-      become_method: su
+      #become_method: su
       lineinfile:
         dest: /etc/hosts
         line: '{{item}} {{hostvars[item].hostname}}'

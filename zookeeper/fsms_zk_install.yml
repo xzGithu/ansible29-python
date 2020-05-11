@@ -27,17 +27,18 @@
       register: pbig
     - name: create {{instpath}}
       become: yes
-      become_method: su
+      #become_method: su
       file: >-
         dest={{ instpath }} mode=0777 state=directory owner={{ ansible_ssh_user }}
-      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
     - name: exit with can not create install path
       fail: msg="no permission to create {{instpath}}"
       when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
 ### configure hosts file
     - name: backup /etc/hosts
       become: yes
-      shell: echo y|/etc/hosts /etc/hosts.ansible.zk
+      shell: echo y|cp /etc/hosts /etc/hosts.ansible.zk
     - name: configure /etc/hosts
       become: yes
       #become_method: su
@@ -101,9 +102,9 @@
       shell: 'source ~/.bash_profile;cd {{instpath}}/zookeeper/bin;nohup ./zkServer.sh start & sleep 2'
       tags:
         - start zookeeper
-    - name: wait for 30s
+    - name: wait for 5s
       pause:
-        seconds: 30
+        seconds: 5
 ### check if started
     - name: catch zookeeper process numbers
       shell: "ps -ef|grep {{instpath}}/zookeeper|grep -v grep|wc -l"

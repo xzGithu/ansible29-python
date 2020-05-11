@@ -29,7 +29,8 @@
 #      become_method: su
       file: >-
         dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
-      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
     - name: exit with can not create {{instpath}}
       fail: msg="no permission to create {{instpath}}"
       when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
