@@ -1,0 +1,17 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+
+    - name: check whether nginx process is running
+      shell: ps -ef |grep {{instpath}}|grep -v ansible|grep -v grep|wc -l
+      register: result
+    - name: kill running process which start from {{instpath}}
+      shell: ps -ef|grep {{instpath}}|grep -v ansible|grep -v grep|awk '{print $2}'|xargs kill -9
+      when: result.stdout|int>0
+
+    - name: rollback dirs {{instpath}}
+      file:
+        path: '{{instpath}}'
+        state: absent

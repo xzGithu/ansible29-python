@@ -1,0 +1,92 @@
+---
+- hosts: groups
+  gather_facts: no
+  become: no
+#  become_method: sudo
+  tasks:
+    - name: check namenode process num
+      shell: jps|grep NameNode|wc -l
+      register: nresult
+      when: ansible_ssh_host == firstnode or ansible_ssh_host == secondnode
+    - name: namenode start success
+      command: echo start namenode success
+      when: (ansible_ssh_host == firstnode and nresult.stdout|int>0) or (ansible_ssh_host == secondnode and nresult.stdout|int>0)
+    - name: namenode start failed
+      fail: msg="start namenode failed"
+      when: (ansible_ssh_host == firstnode and nresult.stdout|int == 0) or (ansible_ssh_host == secondnode and nresult.stdout|int == 0)
+
+    - name: check RM process num
+      shell: jps|grep ResourceManager|wc -l
+      register: rmresult
+    - name: RM start success
+      command: echo start RM success
+      when: (ansible_ssh_host == firstnode and rmresult.stdout|int>0) or (ansible_ssh_host == secondnode and rmresult.stdout|int>0)
+    - name: RM start failed
+      fail: msg="start RM failed"
+      when: (ansible_ssh_host == firstnode and rmresult.stdout|int==0) or (ansible_ssh_host == secondnode and rmresult.stdout|int==0)
+
+    - name: check datanode process num
+      shell: jps|grep DataNode|wc -l
+      register: dresult
+    - name: datanode start success
+      command: echo start datanode success
+      when: dresult.stdout|int>0
+    - name: datanode start failed
+      fail: msg="start datanode failed"
+      when: dresult.stdout|int == 0
+
+    - name: check NodeManager process num
+      shell: jps|grep NodeManager|wc -l
+      register: nmresult
+    - name: NodeManager start success
+      command: echo start NodeManager success
+      when: nmresult.stdout|int>0
+    - name: NodeManager start failed
+      fail: msg="start NodeManager failed"
+      when: nmresult.stdout|int == 0
+
+    - name: check JournalNode process num
+      shell: jps|grep JournalNode|wc -l
+      register: jresult
+    - name: JournalNode start success
+      command: echo start JournalNode success
+      when: jresult.stdout|int>0
+    - name: JournalNode start failed
+      fail: msg="start JournalNode failed"
+      when: jresult.stdout|int == 0
+
+### start hadoop
+#    - name: start journal node
+#      shell: "source ~/.bash_profile;nohup {{instpath}}/hadoop/sbin/hadoop-daemon.sh start journalnode & sleep 3"
+#    - name: get java home
+#      shell: cat ~/.bash_profile |grep '^export[[:space:]]*JAVA_HOME='|awk -F'=' '{print $2}'
+#      register: javahome
+#    - name: set hadoop jave home
+#      lineinfile: path={{instpath}}/hadoop/etc/hadoop/hadoop-env.sh regexp="export JAVA_HOME=" line="export JAVA_HOME={{javahome.stdout}}"
+#    - name: get journal status
+#      shell: "jps|grep JournalNode|wc -l"
+#      register: jouresult
+#      when: ansible_ssh_host == firstnode or ansible_ssh_host == secondnode
+#    - name: failed to start journal node
+#      fail: msg="start journal node failed ,exit"
+#      when: ansible_ssh_host == firstnode and jouresult.stdout|int == 0
+#    - name: format namenode
+#      shell: "source ~/.bash_profile; nohup {{instpath}}/hadoop/bin/hdfs namenode -format & sleep 3"
+#      when: ansible_ssh_host == firstnode and jouresult.stdout|int != 0
+#      register: mkresult
+#    - name: copy master namenode dir to slave namenode
+#      shell: "scp -r {{instpath}}/hadoop/tmp {{hostvars[secondnode].ansible_ssh_user}}@{{hostvars[secondnode].hostname}}:/{{instpath}}/hadoop/"
+#      when: mkresult.rc == 0 and ansible_ssh_host == firstnode
+#      when: ansible_ssh_host == firstnode
+#    - name: format zk cluster
+#      shell: "source ~/.bash_profile;nohup {{instpath}}/hadoop/bin/hdfs zkfc -formatZK & sleep 3"
+#      when: ansible_ssh_host == firstnode
+#    - name: run dfs start on firstnode
+#      shell: "source ~/.bash_profile;{{instpath}}/hadoop/sbin/start-dfs.sh ; sleep 2"
+#      when: ansible_ssh_host == firstnode 
+#    - name: run yarn start on secondnode
+#      shell: "source ~/.bash_profile;{{instpath}}/hadoop/sbin/start-yarn.sh ; sleep 2"
+#      when: ansible_ssh_host == secondnode and jouresult.stdout != 0
+#    - name: run yarn start on firstnode
+#      shell: "source ~/.bash_profile; {{instpath}}/hadoop/sbin/yarn-daemon.sh start resourcemanager ; sleep 2"
+#      when: ansible_ssh_host == firstnode 

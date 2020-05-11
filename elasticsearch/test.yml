@@ -1,0 +1,9 @@
+---
+- hosts: 192.168.95.113
+  gather_facts: no
+  become: yes
+  become_method: sudo
+  tasks: 
+    - name: test
+      shell: touch /123.txt
+      

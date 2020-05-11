@@ -1,0 +1,40 @@
+{
+	"debug": true,
+	"debugTaskIds": [],
+	"hostname": "",
+	"ip": "{{ansible_ssh_host}}",
+	"defaultkpi": {{defaultkpi}},
+	"rpcListen": "0.0.0.0:58883",
+	"timeout": 5000,
+	"addTaskRandomTimeSecond": 2,
+	"pprofEnabled": false,
+	"pprofListen": "0.0.0.0:58885",
+	"cacheLastData": true,
+	"scriptResLimit": {
+		"maxCpuPercent": 5,
+		"maxMemoryMB": 10
+	},
+	"goroutineLimit": {
+		"limitEnabled": true,
+		"limitNum": 10,
+		"goroutineCache": 500,
+		"runTaskRandomTimeSecond": 0
+	},
+	"plugin": {
+		"enabled": true,
+		"pluginterval": 1800,
+		"dir": "../plugin"
+	},
+	"transfer": {
+		"enabled": true,
+		"maxConns": 5,
+		"maxIdle": 5,
+		"connTimeout": 5000,
+		"addrs": {{transferaddrs|gentransferlist}},
+		"taskinterval": 300,
+		"interval": 60,
+		"datasize": 6,
+		"datacache": 100000
+	},
+	"FSRootPartition": true
+}

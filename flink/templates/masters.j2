@@ -1,0 +1,7 @@
+#192.168.95.112:8081
+
+{% for host in seed_hosts %}
+{% if loop.index<3 %}
+{{host}}:{{ hostvars[host]['port']}}
+{% endif %}
+{% endfor %}

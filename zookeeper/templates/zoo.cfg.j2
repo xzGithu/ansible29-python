@@ -1,0 +1,15 @@
+tickTime=2000
+initLimit=20
+syncLimit=10
+#dataDir={{instpath}}/zookeeper/data
+dataDir={{datapath}}
+dataLogDir={{instpath}}/zookeeper/dataLogDir
+clientPort={{port}}
+quorumListenOnAllIPs=true
+{% for host_name in seed_hosts%}
+server.{{ loop.index }}={{ host_name }}:{{hostvars[host_name].transferport}}:{{hostvars[host_name].voteport}}
+{% endfor %}
+authProvider.1=org.apache.zookeeper.server.auth.SASLAuthenticationProvider
+requireClientAuthScheme=sasl
+jaasLoginRenew=3600000
+admin.serverPort={{adminport}}

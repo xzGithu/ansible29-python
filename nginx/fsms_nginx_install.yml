@@ -1,0 +1,69 @@
+---
+- hosts: 192.168.181.130
+  become: no
+  gather_facts: no
+  tasks:
+### check whether nginx is running
+    - name: check whether nginx is running
+      shell: ps -ef|grep {{ instpath }}/nginx|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed nginx
+      #shell: "ps -ef |grep {{ instpath }}/nginx|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="already running nginx on this host"
+      when: result.stdout|int>0  # change to type int
+###check whether nginx
+    - name: check whether nginx directory exist
+      stat: 
+        path: '{{ instpath }}/nginx'
+      register: p
+    - name: exit with already installed nginx under path {{instpath}}
+      fail: msg="nginx already installed under this path"
+      when: p.stat.isdir is defined and p.stat.isdir
+
+    - name: check whether install path exist or not
+      stat: 
+        path: '{{ instpath }}'
+      register: pbig
+    - name: create install path
+      become: yes
+      #become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create {{instpath}} path
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+### install depends software
+    - name: install depends soft packages
+      become: yes
+      yum: 
+        name:
+          - gcc
+          - pcre
+          - pcre-devel
+          - openssl
+          - openssl-devel
+          - zlib
+          - zlib-devel
+        state: present
+### deploy nginx
+    - name: deploy nginx
+      unarchive: src=/opt/ansible/nginx/packages/nginx-1.16.1.tar.gz dest={{instpath}}
+    - name: build nginx
+      shell: cd {{instpath}}/nginx-1.16.1; ./configure --prefix={{instpath}}/nginx;make && make install
+    - name: replace config file 
+      template: src=/opt/ansible/nginx/templates/nginx.conf.j2 dest={{instpath}}/nginx/conf/nginx.conf
+### start nginx
+    - name: start nginx
+      shell: 'nohup {{instpath}}/nginx/sbin/nginx & sleep 2'
+### check whether started
+    - name: catch process nums
+      shell: ps -ef |grep {{instpath}}/nginx|grep -v grep|wc -l
+      register: presult
+    - name: start success
+      command: echo success
+      when: presult.stdout>0
+    - name: start failed
+      fail: msg="nginx start failed"
+      when: presult.stdout==0

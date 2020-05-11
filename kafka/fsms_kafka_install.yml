@@ -1,0 +1,104 @@
+---
+- hosts: groups
+  gather_facts: no
+  become: no
+  tasks:
+### check whether kafka is running
+    - name: check whether kafka running from {{instpath}}
+      shell: ps -ef|grep {{instpath}}/kafka|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed kafka
+      #shell: "ps -ef |grep {{instpath}}/kafka|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="already installed kafka on this host"
+      when: result.stdout|int>0  # change to type int
+### check whether kafka dir exists
+    - name: check whether kafka directory exist under {{instpath}}
+      stat: 
+        path: '{{ instpath }}/kafka'
+      register: p
+    - name: exit with already installed kafka under path {{instpath}}
+      fail: msg="already install kafka under this dir. To install give a new dir"
+      when: p.stat.isdir is defined and p.stat.isdir
+### make install dir
+    - name: check whether install path exist
+      stat: 
+        path: '{{ instpath }}'
+      register: pbig
+    - name: create directory for install path
+      become: yes
+      become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create {{instpath}}
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+
+### install java
+    - name: check java env
+      #shell: 'java -version'
+      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+      ignore_errors: yes
+      register: javaenv
+    - name: backup bash_profile
+      shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.kafka
+      when: javaenv.stdout|int==0
+    #- name: check if java exists
+    #  stat:
+    #    path: '{{ instpath }}/jdk'
+    #  register: pjava
+    - name: install java
+      unarchive: src=/opt/ansible/jdk/jdk.tar.gz dest={{instpath}}
+      when: javaenv.stdout|int==0
+    - name: set java env 
+      lineinfile: path=~/.bash_profile regexp="{{item.position}}" line="{{item.value}}" state=present insertbefore="^export PATH=(.*)"
+      with_items:
+        - {position: "^export JAVA_HOME=(.*)", value: "export JAVA_HOME={{instpath}}/jdk"}
+      when: javaenv.stdout|int==0
+    - name: set path env 
+      lineinfile: path=~/.bash_profile line="{{item.value}}"  insertafter="^export PATH=(.*)"
+      with_items:
+        - {position: "export PATH=", value: "export PATH=$JAVA_HOME/bin:$PATH"}
+      when: javaenv.stdout|int==0
+    - name: update permission for java/bin # modify 
+      file: dest={{instpath}}/jdk/bin mode=0755 recurse=yes
+      when: javaenv.stdout|int==0
+    - name: flush bash_profile#flush env
+      shell: source ~/.bash_profile
+      when: javaenv.stdout|int==0
+### deploy kafka
+    - name: install kafka
+      unarchive: src=/opt/ansible/kafka/packages/kafka.tgz dest={{instpath}}
+### configure kafka
+    - name: config consumer.properties
+      template: src=/opt/ansible/kafka/templates/consumer.properties.j2 dest={{instpath}}/kafka/config/consumer.properties
+    - name: config producer.properties
+      template: src=/opt/ansible/kafka/templates/producer.properties.j2 dest={{instpath}}/kafka/config/producer.properties.cfg
+    - name: config server.properties
+      template: src=/opt/ansible/kafka/templates/server.properties.j2 dest={{instpath}}/kafka/config/server.properties
+    - name: config kafka-runclass
+      template: src=/opt/ansible/kafka/templates/kafka-run-class.sh.j2 dest={{instpath}}/kafka/bin/kafka-run-class.sh
+    - name: create log directory
+      file: dest={{instpath}}/kafka/logs mode=0755 state=directory recurse=yes
+    - name: create data directory
+      file: dest={{logpath}} mode=0755 state=directory recurse=yes
+    - name: change owner and group for kafka
+      file: path={{instpath}}/kafka recurse=yes
+### start kafka
+    - name: start kafka
+      shell: 'source ~/.bash_profile;cd {{instpath}}/kafka/bin;nohup ./kafka-server-start.sh -daemon {{instpath}}/kafka/config/server.properties & sleep 2'
+      tags:
+        - start kafka
+    - name: wait for 30s
+      pause:
+        seconds: 30
+### check if started
+    - name: catch kafka process numbers
+      shell: "ps -ef|grep {{instpath}}/kafka|grep -v grep|wc -l"
+      register: presult
+    - name: start success
+      shell: echo kafka started
+      when: presult.stdout|int > 0
+    - name: start failed
+      fail: msg="kafka start failed"
+      when: presult.stdout|int == 0

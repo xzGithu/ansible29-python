@@ -1,0 +1,41 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+### initialize the database user password
+    - name: initialize the user password
+      #become: yes
+      #become_method: su
+      shell: 'cd {{instpath}}/mysql/bin; ./mysqld --initialize --user=mysql --basedir={{instpath}}/mysql --datadir={{instpath}}/mysql/data '
+      register: iresult
+    - name: save initialize password to {{instpath}}/mysql/password.txt {{iresult.stderr}}
+      become: yes
+      shell: echo "{{iresult.stderr}}" > {{instpath}}/mysql/password.txt & sleep 2
+### create my.cnf file
+    - name: generate my.cnf file
+      become: yes
+      #become_method: su
+      template: src=/opt/ansible/mysql/templates/my.cnf.j2 dest=/etc/my.cnf
+### start mysql
+    - name: start mysql
+#      become: yes
+#      become_method: su
+#      become_user: mysql
+      shell: 'cd {{instpath}}/mysql; nohup bin/mysqld_safe --user=mysql & sleep 2'
+    - name: check start status
+      shell: 'ps -ef |grep {{instpath}}/mysql|grep -v grep|grep -v ansible|wc -l'
+      register: presult
+    - name: start success
+      command: echo start success
+      when: presult.stdout|int >0
+    - name: get temporary password
+      shell: cat {{instpath}}/mysql/password.txt |grep 'temporary password'|awk '{print $NF}'
+      register: passwd
+    - name: set password for root user
+      shell: "{{instpath}}/mysql/bin/mysqladmin -uroot -p'{{passwd.stdout}}' password 123321"
+      when: presult.stdout|int>0
+    - name: start failed
+      fail: msg="mysql start failed"
+      when: presult.stdout|int == 0
+

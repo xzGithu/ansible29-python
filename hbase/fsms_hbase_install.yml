@@ -1,0 +1,158 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+### check path status
+### make install path
+    - name: check whether exist {{instpath}}
+      stat:
+        path: '{{ instpath }}'
+      register: pbig
+    - name: create {{instpath}}
+      become: yes
+#      become_method: su
+      file: >-
+        dest={{ instpath }} mode=0777 state=directory owner={{ ansible_ssh_user }}
+      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create install path
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+### check whether hbase is running
+    - name: check hbase running from {{instpath}}/zookeeper
+      shell: ps -ef|grep {{ instpath }}/hbase|grep -v grep|wc -l
+      register: result
+    - name: hbase exists
+      #shell: "ps -ef |grep {{ instpath }}/hbase|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="already installed hbase on this host"
+      when: result.stdout|int>0  # change to type int
+### check whether hbase exists
+    - name: check whether hbase directory exist
+      stat:
+        path: '{{ instpath }}/hbase'
+      register: p
+    - name: exit with already installed hbase
+      fail: msg="already install hbase under this dir. To install give a new dir"
+      when: p.stat.isdir is defined and p.stat.isdir
+### modify nofile for user
+    - name: check user {{ansible_ssh_user}} soft nofile numbers
+      shell: cat /etc/security/limits.conf|grep {{ansible_ssh_user}}|grep nofile|grep soft|awk '{print $4}'
+      register: softnum
+    - name: check user {{ansible_ssh_user}} hard nofile numbers
+      shell: cat /etc/security/limits.conf|grep {{ansible_ssh_user}}|grep nofile|grep hard|awk '{print $4}'
+      register: hardnum
+    - name: backup /etc/security/limits.conf
+      become: yes
+      shell: echo y|sudo cp /etc/security/limits.conf /etc/security/limits.conf.ansible.hbase
+    - name: update user {{ansible_ssh_user}} soft nofile numbers
+      become: yes
+      lineinfile: path=/etc/security/limits.conf line="{{ansible_ssh_user}} soft    nofile    655360"
+      when: softnum.stdout|int<10240
+    - name: update user {{ansible_ssh_user}} hard nofile numbers
+      become: yes
+      lineinfile: path=/etc/security/limits.conf line="{{ansible_ssh_user}} hard    nofile    655360"
+      when: hardnum.stdout|int<10240
+### configure etc/hosts for every host
+    - name: backup etc hosts
+      become: yes
+      become_method: su
+      shell: cp /etc/hosts /etc/hosts.ansible.hbase
+      when: ansible_become_pass is defined
+    - name: modify etc/hosts file
+      become: yes
+      become_method: su
+      lineinfile:
+        dest: /etc/hosts
+        line: '{{item}} {{hostvars[item].hostname}}'
+      with_items: "{{seed_hosts}}"
+### check java environment
+    - name: backup bash_profile
+      shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.hbase
+    - name: check java environment
+      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+      ignore_errors: yes
+      register: javaenv
+    - name: install java
+      unarchive: src=/opt/ansible/jdk/jdk.tar.gz dest={{instpath}}
+      when: javaenv.stdout|int==0
+    - name: set java environment
+      lineinfile: path=~/.bash_profile regexp="{{item.position}}" line="{{item.value}}" state=present insertbefore="^export PATH=(.*)"
+      with_items:
+        - {position: "^export JAVA_HOME=(.*)", value: "export JAVA_HOME={{instpath}}/jdk"}
+      when: javaenv.stdout|int==0
+    - name: update path environment for {{ansible_ssh_user}}
+      lineinfile: path=~/.bash_profile line="{{item.value}}"  insertafter="^export PATH=(.*)"
+      with_items:
+        - {position: "export PATH=", value: "export PATH=$JAVA_HOME/bin:$PATH"}
+      when: javaenv.stdout|int==0
+    - name: update java/bin permissions # modify 
+      file: dest={{instpath}}/jdk/bin mode=0755 recurse=yes
+      when: javaenv.stdout|int==0
+    - name: flush bash_profile #flush env
+      shell: source ~/.bash_profile
+      when: javaenv.stdout|int==0
+### configure hbase home
+    - name: configure HBASE_HOME
+      lineinfile: dest=~/.bash_profile line="export HBASE_HOME={{instpath}}/hbase"
+    - name: update path
+      lineinfile: dest=~/.bash_profile line="export PATH=$PATH:$HBASE_HOME/bin"
+    - name: flush bash_profile for hbase home
+      shell: source ~/.bash_profile
+### install hbase
+    - name: deploy hbase
+      unarchive: src=/opt/ansible/hbase/packages/hbase.tar.gz dest={{instpath}}
+    - name: update hbase-site.xml
+      template: src=/opt/ansible/hbase/templates/hbase-site.xml.j2 dest={{instpath}}/hbase/conf/hbase-site.xml
+    - name: update regionservers
+      template: src=/opt/ansible/hbase/templates/regionservers.j2 dest={{instpath}}/hbase/conf/regionservers
+    - name: update backup-masters
+      template: src=/opt/ansible/hbase/templates/backup-masters.j2 dest={{instpath}}/hbase/conf/backup-masters
+    - name: update hbase-env.sh
+      template: src=/opt/ansible/hbase/templates/hbase-env.sh.j2 dest={{instpath}}/hbase/conf/hbase-env.sh
+    - name: get java home
+#      shell: cat ~/.bash_profile |grep '^export[[:space:]]*JAVA_HOME='|awk -F'=' '{print $2}'
+      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'
+      register: javahome
+    - name: update java home for hbase-env.sh
+      lineinfile: path={{instpath}}/hbase/conf/hbase-env.sh regexp="export JAVA_HOME=" line="export JAVA_HOME={{javahome.stdout}}"
+### start hbase
+    - name: start hbase mater on firstnode {{firstnode}}
+      shell: source ~/.bash_profile; nohup {{instpath}}/hbase/bin/hbase-daemon.sh start master & sleep 2
+      when: firstnode is defined and ansible_ssh_host==firstnode
+    - name: start regionserver on nodes
+      shell: source ~/.bash_profile; nohup {{instpath}}/hbase/bin/hbase-daemon.sh start regionserver & sleep 2
+#      when: ansible_ssh_host != firstnode
+    - name: start hbase backup master on secondnode {{secondnode}}
+      shell: source ~/.bash_profile; nohup {{instpath}}/hbase/bin/hbase-daemon.sh start master --backup & sleep 2
+      when: secondnode is defined and ansible_ssh_host==secondnode
+### check start status
+    - name: check master status
+      shell:
+      when: ansible_ssh_host == firstnode
+      register: mresult
+    - name: check backup master status
+      shell:
+      when: ansible_ssh_host == secondnode
+      register: bresult
+    - name: check regionserver status
+      shell:
+      register: reresult
+    - name: master start success
+      command: echo success
+      when: ansble_ssh_host==firstnode and mresult.stdout|int>0
+    - name: backup master start success
+      command: echo success
+      when: ansible_ssh_host==secondnode and bresult.stdout|int>0
+    - name: regionservers start success
+      command: echo success
+      when: ansible_ssh_host!=firstnode and reresult.stdout|int>0
+
+    - name: master start failed
+      fail: msg="master start failed on {{firstnode}}"
+      when: ansble_ssh_host==firstnode and mresult.stdout|int==0
+    - name: backup master start failed
+      fail: msg="backup master start failed on {{secondnode}}"
+      when: ansible_ssh_host==secondnode and bresult.stdout|int==0
+    - name: regionservers start failed
+      fail: msg="regionserver start failed on {{ansible_ssh_host}}"
+      when: ansible_ssh_host!=firstnode and reresult.stdout|int>0

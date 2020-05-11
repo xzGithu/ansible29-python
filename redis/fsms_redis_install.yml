@@ -1,0 +1,91 @@
+---
+- hosts: groups
+  gather_facts: no
+  become: no
+  tasks:
+
+### check whether redis is running
+    - name: check redis running
+      shell: ps -ef|grep redis-server|grep {{ansible_ssh_user}}|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed redis
+      fail: msg="redis already install on this host"
+      when: result.stdout|int>0  # change to type int
+### check whether redis exists
+    - name: check whether redis dir exist under {{instpath}}
+      stat: 
+        path: '{{ instpath }}/redis'
+      register: p
+    - name: exit with already installed redis under path {{instpath}}
+      fail: msg="already install redis under this dir. To install give a new dir"
+      when: p.stat.isdir is defined and p.stat.isdir
+
+### make install dir
+    - name: check whether {{instpath}} exist
+      stat: 
+        path: '{{ instpath }}'
+      register: pbig
+      #when: ansible_become_pass is defined
+    - name: create {{instpath}}
+      become: yes
+      become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create {{instpath}}
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+
+### deploy redis
+    - name: install redis
+      unarchive: src=/opt/ansible/redis/packages/redis.tgz dest={{instpath}}
+    - name: copy redis
+      shell: cd {{instpath}}; cp -r redis redis-slave
+### configure redis
+    - name: config redis.conf
+      template: src=/opt/ansible/redis/templates/redis.conf.j2 dest={{instpath}}/redis/redis.conf
+    - name: config slave redis.conf
+      template: src=/opt/ansible/redis/templates/redis.conf.slave.j2 dest={{instpath}}/redis-slave/redis.conf
+    - name: create data directory
+      file: dest={{datapath}} mode=0755 state=directory owner={{ansible_ssh_user}} recurse=yes
+    - name: create slave data directory
+      file: dest={{instpath}}/redis-slave/data mode=0755 state=directory owner={{ansible_ssh_user}} recurse=yes
+    - name: change owner and group
+      file: path={{instpath}}/redis recurse=yes
+    - name: change redis slave owner and group
+      file: path={{instpath}}/redis-slave recurse=yes
+### start redis
+    - name: start redis
+      shell: "cd {{instpath}}/redis; nohup ./src/redis-server redis.conf & sleep 2"
+    - name: start slave redis
+      shell: "cd {{instpath}}/redis-slave; nohup ./src/redis-server redis.conf & sleep 2"
+#    - name: wait for 30s
+#      pause:
+#        seconds: 30
+### check whether started
+    - name: check process
+      shell: "ps -ef|grep redis-server|grep {{ansible_ssh_user}}|grep -v grep|wc -l"
+      register: presult
+    - name: start success
+      shell: echo redis start successfully
+      when: presult.stdout|int == 2
+    - name: start failed
+      fail: msg="redis start failed"
+      when: presult.stdout|int < 2
+### create cluster
+    - name: cluster ips generate
+      set_fact:
+        cluster_address: |-
+         [
+           {% set prehosts = groups.groups %}
+           {% for host in prehosts -%}
+             {% set pre_ip = hostvars[host].inventory_hostname | default(host) -%}
+             {% set pre_port = hostvars[host].port -%}
+             "{{ pre_ip }}:{{ pre_port }} {{ pre_ip }}:{{ pre_port|int +1 }} "
+           {% endfor -%}
+         ]
+    - name: echo {{cluster_address}}
+      command: echo yes
+    - name: create redis cluster with cluster-replicas=1
+      shell: "cd {{instpath}}/redis; echo yes|./src/redis-cli --cluster create {{cluster_address[0]}} --cluster-replicas 1 -a {{masterpasswd}}"
+      when: ansible_ssh_host==firstnode

@@ -1,0 +1,21 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+
+    - name: check whether redis process running
+      shell: ps -ef |grep redis-server|grep {{ansible_ssh_user}}|grep -v ansible|grep -v grep|wc -l
+      register: result
+    - name: kill running redis process which start from {{instpath}}
+      shell: ps -ef|grep redis-server|grep {{ansible_ssh_user}}|grep -v ansible|grep -v grep|awk '{print $2}'|xargs kill -9
+      when: result.stdout|int>0
+
+    - name: rollback dirs {{instpath}}
+      file:
+        path: '{{instpath}}'
+        state: absent
+    - name: rollback dirs reddis-slave
+      file:
+        path: '{{instpath}}-slave'
+        state: absent

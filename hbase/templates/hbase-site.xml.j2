@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+/**
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<configuration>
+  <property>
+    <name>hbase.zookeeper.property.clientPort</name>
+    <value>{{zkconnectport}}</value>
+  </property>
+  <property>
+    <name>hbase.zookeeper.quorum</name>
+    <value>{{zkconnect}}</value>
+    <description>The directory shared by RegionServers.
+    </description>
+  </property>
+  <property>
+    <name>hbase.zookeeper.property.dataDir</name>
+    <value>{{zkdatapath}}</value>
+    <description>
+    注意这里的zookeeper数据目录与hadoop ha的共用，也即要与 zoo.cfg 中配置的一致
+    Property from ZooKeeper config zoo.cfg.
+    The directory where the snapshot is stored.
+    </description>
+  </property>
+  <property>
+    <name>hbase.rootdir</name>
+    <value>{{hbaserootdir}}</value>
+    <description>The directory shared by RegionServers.
+                 官网多次强调这个目录不要预先创建，hbase会自行创建，否则会做迁移操作，引发错误
+                 至于端口，有些是8020，有些是9000，看 $HADOOP_HOME/etc/hadoop/hdfs-site.xml 里面的配置，本实验配置的是
+                 dfs.namenode.rpc-address.hdcluster.nn1 , dfs.namenode.rpc-address.hdcluster.nn2
+    </description>
+  </property>
+  <property>
+    <name>hbase.cluster.distributed</name>
+    <value>true</value>
+    <description>分布式集群配置，这里要设置为true，如果是单节点的，则设置为false
+      The mode the cluster will be in. Possible values are
+      false: standalone and pseudo-distributed setups with managed ZooKeeper
+      true: fully-distributed with unmanaged ZooKeeper Quorum (see hbase-env.sh)
+    </description>
+  </property>
+</configuration>

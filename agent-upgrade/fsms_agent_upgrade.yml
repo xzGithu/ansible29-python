@@ -1,0 +1,46 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+
+    - name: check install directory status
+      stat:
+        path: '{{instpath}}'
+      register: pbig
+    - name: create install directory
+      become: yes
+#      become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create install directory
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+
+    - name: check whether ultraagent process is running
+      shell: ps -ef |grep ultraagent|grep -v python|grep {{ansible_ssh_user}}|grep -v grep|wc -l
+      register: result
+    - name: stop ultraagent process
+      shell: ps -ef |grep ultraagent|grep -v python|grep {{ansible_ssh_user}}|grep -v grep|awk '{print $2}'|xargs kill -9
+      when: register.stdout|int>0
+
+    - name: backup old ultraagent
+      become: yes
+      shell: echo y| mv {{preinstpath}} {{preinstpath}}-bakup
+    - name: install new ultraagent
+      unarchive: src=/opt/ansible/agent-upgrade/packages/ultraagent.tar.gz dest={{instpath}}
+    - name: modify configure file
+      template: src=/opt/ansible/agent-upgrade/templates/cfg.json.j2 dest={{instpath}}/agent/config/agent/cfg.json
+### start agent
+    - name: start agent
+      shell: 'nohup {{instpath}}/agent/bin/control start agent & sleep 2'
+    - name: catch process num
+      shell: 'ps -ef |grep ultraagent|grep {{ansible_ssh_user}}|grep -v grep|wc -l'
+      register: presult
+    - name: start success
+      command: echo success
+      when: presult.stdout|int >0
+    - name: start failed
+      fail: msg="agent start failed"
+      when: presult.stdout|int == 0

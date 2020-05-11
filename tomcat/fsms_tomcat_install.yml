@@ -1,0 +1,93 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+### check whether tomcat is running
+    - name: check whether tomcat running from {{instpath}}/tomcat
+      shell: ps -ef|grep {{ instpath }}/tomcat|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed tomcat
+      #shell: "ps -ef |grep {{ instpath }}/tomcat|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="already installed tomcat on this host"
+      when: result.stdout|int>0  # change to type int
+
+###check whether tomcat and delete
+    - name: check whether tomcat directory exist
+      stat: 
+        path: '{{ instpath }}/tomcat'
+      register: p
+    - name: exit with already installed tomacat under path {{instpath}}
+      fail: msg="tomcat already installed under this path"
+      when: p.stat.isdir is defined and p.stat.isdir
+###
+    - name: check install path
+      stat: 
+        path: '{{ instpath }}'
+      register: pbig
+    - name: create {{instpath}}
+      become: yes
+      become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create {{instpath}}
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+### check java env
+    - name: check java exists or not
+      #shell: 'java -version'
+      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+      ignore_errors: yes
+      register: javaenv
+    - name: backup bash_profile
+      shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.tomcat
+      when: javaenv.stdout|int==0
+    - name: install java
+      unarchive: src=/opt/ansible/jdk/jdk.tar.gz dest={{instpath}}
+      when: javaenv.stdout|int==0
+    - name: set java env 
+      lineinfile: path=~/.bash_profile regexp="{{item.position}}" line="{{item.value}}" state=present insertbefore="^export PATH=(.*)"
+      with_items:
+        - {position: "^export JAVA_HOME=(.*)", value: "export JAVA_HOME={{instpath}}/jdk"}
+      when: javaenv.stdout|int==0
+    - name: set path env 
+      lineinfile: path=~/.bash_profile line="{{item.value}}"  insertafter="^export PATH=(.*)"
+      with_items:
+        - {position: "export PATH=", value: "export PATH=$JAVA_HOME/bin:$PATH"}
+      when: javaenv.stdout|int==0
+    - name: update permission for java/bin # modify 
+      file: dest={{instpath}}/jdk/bin mode=0755 recurse=yes
+      when: javaenv.stdout|int==0
+    - name: flush bash_profile #flush env
+      shell: source ~/.bash_profile
+      when: javaenv.stdout|int==0
+### install tomcat
+    - name: deploy tomcat
+      unarchive: src=/opt/ansible/tomcat/packages/tomcat.tar.gz dest={{instpath}}
+    - name: modify configuration file for tomcat
+      template: >-
+        src=/opt/ansible/tomcat/templates/server.xml.j2
+        dest={{instpath}}/tomcat/conf/server.xml
+    - name: modify catalina file for tomcat
+      template: >-
+        src=/opt/ansible/tomcat/templates/catalina.sh.j2
+        dest={{instpath}}/tomcat/bin/catalina.sh
+    - name: change owner and group for tomcat
+      file: >-
+        path={{instpath}}/tomcat owner={{ansible_ssh_user}}
+        recurse=yes
+    - name: update permission for tomcat/bin
+      shell: chmod +x {{instpath}}/tomcat/bin/*
+### start tomcat
+    - name: start tomcat
+      shell: "source ~/.bash_profile; cd {{instpath}}/tomcat/bin; nohup ./startup.sh & sleep 2"
+    - name: check process numbers
+      shell: "ps -ef|grep {{instpath}}/tomcat|grep -v grep|wc -l"
+      register: presult
+    - name: start success
+      command: echo start success
+      when: presult.stdout > 0
+    - name: start failed
+      fail: msg="tomcat start failed"
+      when: presult.stdout == 0

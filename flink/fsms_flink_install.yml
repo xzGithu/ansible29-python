@@ -1,0 +1,127 @@
+---
+- hosts: groups
+  gather_facts: no
+  become: no
+  tasks:
+### check whether flink is running
+    - name: check whether flink running on this host
+      shell: ps -ef|grep {{instpath}}/flink|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed flink
+      #shell: "ps -ef |grep {{instpath}}/flink|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="flink already installed on this host"
+      when: result.stdout|int>0  # change to type int
+### check whether flink dir exists
+    - name: check whether flink directory exist under {{instpath}}
+      stat: 
+        path: '{{ instpath }}/flink'
+      register: p
+    - name: exit with already installed flink under path {{instpath}}
+      fail: msg="already install flink under this dir. To install give a new dir"
+      when: p.stat.isdir is defined and p.stat.isdir
+### make install dir
+    - name: check install path status
+      stat: 
+        path: '{{ instpath }}'
+      register: pbig
+    - name: create directory for install path
+      become: yes
+#      become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create {{instpath}}
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+### configure no password for install users
+    - name: check whether key file exists of {{ansible_ssh_user}}
+      stat: 
+        path: ~/.ssh/id_rsa.pub
+      when: ansible_ssh_host == jobip
+      register: keypath
+      ignore_errors: yes
+    - name: configure no password authenticate for "{{ansible_ssh_user}}"
+      shell: ssh-keygen -t rsa -b 2048 -N '' -f ~/.ssh/id_rsa
+      when: keypath.stat.exists is defined and keypath.stat.exists == false and ansible_ssh_host == jobip
+    - name: copy id_ras.pub to localpath
+      fetch: src=~/.ssh/id_rsa.pub dest=./autho
+      when: inventory_hostname == jobip
+    - name: deliver public keys to other nodes
+      authorized_key:
+        user: "{{ansible_ssh_user}}"
+        key: "{{ lookup('file', './autho/{{jobip}}/home/{{hostvars[jobip].ansible_ssh_user}}/.ssh/id_rsa.pub') }}"
+        state: present
+### get each pubkey ,add to known_hosts
+    - name: For each host, scan for its ssh public key
+      #shell: "ssh-keyscan {{ item }},`dig +short {{ item }}`"
+      shell: "ssh-keyscan {{ item }}"
+      with_items: "{{ seed_hosts }}"
+      register: ssh_known_host_results
+      ignore_errors: yes
+    - name: add host to know_hosts on jobmanager node
+      known_hosts:
+        host: "{{ item.item }}"
+        state: present
+        key: "{{ item.stdout }}"
+      with_items: "{{ ssh_known_host_results.results }}"
+      when: inventory_hostname == jobip
+    
+### install java
+    - name: check java environment
+#      shell: 'java -version'
+      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+      ignore_errors: yes
+      register: javaenv
+    - name: backup bash_profile
+      shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.flink
+      when: javaenv.stdout|int==0
+    - name: install java
+      unarchive: src=/opt/ansible/jdk/jdk.tar.gz dest={{instpath}}
+      when: javaenv.stdout|int==0
+    - name: set java environment
+      lineinfile: path=~/.bash_profile regexp="{{item.position}}" line="{{item.value}}" state=present insertbefore="^export PATH=(.*)"
+      with_items:
+        - {position: "^export JAVA_HOME=(.*)", value: "export JAVA_HOME={{instpath}}/jdk"}
+      when: javaenv.stdout|int==0
+    - name: set path env 
+      lineinfile: path=~/.bash_profile line="{{item.value}}"  insertafter="^export PATH=(.*)"
+      with_items:
+        - {position: "export PATH=", value: "export PATH=$JAVA_HOME/bin:$PATH"}
+      when: javaenv.stdout|int==0
+    - name: update permission for java/bin # modify 
+      file: dest={{instpath}}/jdk/bin mode=0755 recurse=yes
+      when: javaenv.stdout|int==0
+    - name: flush bash_profile #flush env
+      shell: source ~/.bash_profile
+      when: javaenv.stdout|int==0
+### deploy flink
+    - name: install flink
+      unarchive: src=/opt/ansible/flink/packages/flink.tgz dest={{instpath}}
+### configure flink
+    - name: config flink-conf.yaml
+      template: src=/opt/ansible/flink/templates/flink-conf.yaml.j2 dest={{instpath}}/flink/conf/flink-conf.yaml
+    - name: config masters
+      template: src=/opt/ansible/flink/templates/masters.j2 dest={{instpath}}/flink/conf/masters
+    - name: config slaves
+      template: src=/opt/ansible/flink/templates/slaves.j2 dest={{instpath}}/flink/conf/slaves
+    - name: create storage directory
+      file: dest={{instpath}}/flink/storage mode=0755 state=directory recurse=yes
+    - name: change owner and group for flink directory
+      file: path={{instpath}}/flink owner={{ansible_ssh_user}} recurse=yes
+### start flink
+    - name: start flink
+      shell: "source ~/.bash_profile;cd '{{instpath}}/flink/bin'; nohup ./start-cluster.sh & sleep 2"
+      when: inventory_hostname == jobip
+    - name: wait for 30s
+      pause: 
+        seconds: 30
+### check whether started
+    - name: catch flink process numbers
+      shell: "ps -ef|grep {{instpath}}/flink|grep -v grep|wc -l"
+      register: presult
+    - name: start success
+      command: echo flink start success
+      when: presult.stdout|int>0
+    - name: start failed
+      fail: msg="flink start failed"
+      when: presult.stdout|int==0

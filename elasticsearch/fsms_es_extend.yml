@@ -1,0 +1,188 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+
+### task start
+  tasks:
+### check whether elasticsearch is running
+    - name: check whether elasticsearch running on this host
+      shell: ps -ef|grep {{instpath}}/elasticsearch|grep -v grep|grep -v python|wc -l
+      register: result
+    - name: exit with already installed elasticsearch
+      #shell: "ps -ef |grep {{instpath}}/elasticsearch|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="elasticsearch already installed on the host"
+      when: result.stdout|int>0  # change to type int
+### check whether elasticsearch exists
+    - name: check elasticsearch directory under {{instpath}}
+      stat: 
+        path: '{{ instpath }}/elasticsearch'
+      register: p
+    - name: exit with already installed elasticsearch under {{instpath}}
+      fail: msg="already install elasticsearch under {{instpath}}. To install give a new dir"
+      when: p.stat.isdir is defined and p.stat.isdir
+
+### make bigdata dir
+    - name: check install path directory
+      stat: 
+        path: '{{ instpath }}'
+      register: pbig
+      #when: ansible_become_pass is defined
+    - name: create ditectory for install path
+      become: yes
+      become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create directory
+      fail: msg="no permission to create {{instpath}} directory"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+
+### backup and modify the sysctl.conf file
+    - name: backup sysctl.conf file
+      become: yes
+      become_method: su
+      shell: echo y|cp /etc/sysctl.conf /etc/sysctl.conf.ansible.es
+      when: ansible_become_pass is defined
+    - name: modify sysctl.conf file
+      become: yes
+      become_method: su
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_set: yes
+        reload: "{{ item.reload }}"
+      with_items:
+        - { name: "net.ipv4.ip_local_port_range", value: "10240 65000", reload: no }
+        - { name: "net.ipv4.tcp_syncookies", value: 1, reload: no }
+        - { name: "vm.max_map_count", value: 655360, reload: no }
+        - { name: "net.ipv4.tcp_tw_reuse", value: 1, reload: no }
+        - { name: "net.ipv4.tcp_tw_recycle", value: 1, reload: no }
+        - { name: "net.ipv4.tcp_fin_timeout", value: 30, reload: yes }
+      when: ansible_become_pass is defined
+### backup and modify /etc/security/limits.conf file
+    - name: backup limits.conf file
+      become: yes
+      become_method: su
+      shell: echo y|cp /etc/security/limits.conf /etc/security/limits.conf.ansible.es
+      when: ansible_become_pass is defined
+    - name: modify {{ansible_ssh_user}} limits
+      become: yes
+      become_method: su
+      pam_limits:
+        domain: "{{ansible_ssh_user}}"
+        limit_type: "{{ item.limit_type }}"
+        limit_item: "{{ item.limit_item }}"
+        value: "{{ item.value }}"
+      with_items:
+        - { limit_type: soft, limit_item: nofile, value: 655360 }
+        - { limit_type: hard, limit_item: nofile, value: 655360 }
+        - { limit_type: soft, limit_item: memlock, value: unlimited }
+        - { limit_type: hard, limit_item: memlock, value: unlimited }
+        - { limit_type: soft, limit_item: nproc, value: 65535 }
+        - { limit_type: hard, limit_item: nproc, value: 65535 }
+      when: ansible_become_pass is defined
+
+### install java
+    - name: check java environment
+      #shell: 'java -version'
+      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+      ignore_errors: yes
+      register: javaenv
+    - name: backup bash_profile
+      shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.es
+      when: javaenv.stdout|int==0
+    - name: install java
+      unarchive: src=/opt/ansible/jdk/jdk.tar.gz dest={{instpath}}
+      when: javaenv.stdout|int==0
+    - name: set java environment
+      lineinfile: path=~/.bash_profile regexp="{{item.position}}" line="{{item.value}}" state=present insertbefore="^export PATH=(.*)"
+      with_items:
+        - {position: "^export JAVA_HOME=(.*)", value: "export JAVA_HOME={{instpath}}/jdk"}
+      when: javaenv.stdout|int==0
+    - name: set path env
+      lineinfile: path=~/.bash_profile line="{{item.value}}"  insertafter="^export PATH=(.*)"
+      with_items:
+        - {position: "export PATH=", value: "export PATH=$JAVA_HOME/bin:$PATH"}
+      when: javaenv.stdout|int==0
+    - name: update permission for java/bin # modify 
+      file: dest={{instpath}}/jdk/bin mode=0755 recurse=yes
+      when: javaenv.stdout|int==0
+    - name: flush bash_profile for {{ansible_ssh_user}} #flush env
+      shell: source ~/.bash_profile
+      when: javaenv.stdout|int==0
+### deploy es app
+    - name: copy and unzip elasticsearch
+      unarchive: 'src=/opt/ansible/elasticsearch/packages/elasticsearch.tar.gz dest={{instpath}}'
+    - name: create datapath directory
+      file: >-
+        dest={{datapath}} state=directory 
+    - name: create logpath directory
+      file: >-
+        dest={{logpath}} state=directory
+    - name: update elasticsearch-env file
+      template: >-
+        src=/opt/ansible/elasticsearch/templates/elasticsearch-env.j2
+        dest={{instpath}}/elasticsearch/bin/elasticsearch-env
+    - name: update elasticsearch.yml file
+      template: >-
+        src=/opt/ansible/elasticsearch/templates/elasticsearch-extend.yml.j2
+        dest={{instpath}}/elasticsearch/config/elasticsearch.yml
+    - name: update elasticsearch file
+      template: >-
+        src=/opt/ansible/elasticsearch/templates/elasticsearch.j2
+        dest={{instpath}}/elasticsearch/bin/elasticsearch
+    - name: change owner and group for {{instpath}}/elasticsearch
+      file: >-
+        path={{instpath}}/elasticsearch owner={{ansible_ssh_user}}
+        recurse=yes
+#    - name: source env
+#      shell: source ~/.bash_profile
+    - name: set execute permission for elasticsearch/bin
+      shell: chmod +x {{instpath}}/elasticsearch/bin/*
+    - name: gen seedhosts to configure elasticsearch.yml
+      set_fact: 
+        output: "{{ pre_clusters|ipstring(seed_hosts) }}"
+- hosts: pregroup
+  become: no
+  gather_facts: no
+  tasks: 
+    - name: get certificate of precluster
+     ###  此处路径固定了 后面改为变量 需要i更改获取precluseter时的安装路径
+      fetch: src={{inspath}}/elasticsearch/config/elastic-certificates.p12 dest=./cert
+      run_once: true
+    - name: update seed_hosts of precluster elasticsearch.yml
+      lineinfile:
+        path: "{{inspath}}/elasticsearch/config/elasticsearch.yml"
+        regexp: '^discovery.seed_hosts:'
+        line: 'discovery.seed_hosts: {{ hostvars[excludenode]["output"]|prehostsutf8 }}'
+        state: present
+    - name: update initial_master_nodes of precluster elasticsearch.yml
+      lineinfile:
+        path: "{{inspath}}/elasticsearch/config/elasticsearch.yml"
+        regexp: '^cluster.initial_master_nodes:'
+        line: 'cluster.initial_master_nodes: {{ hostvars[excludenode]["output"]|prehostsutf8 }}'
+        state: present
+
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks: 
+    - name: set certficate for extend nodes
+      copy: src=./cert/{{pre_clusters[0].split(':')[0]}}/{{pre_clusters[0].split(':')[-1]}}/elasticsearch/config/elastic-certificates.p12 dest={{instpath}}/elasticsearch/config
+    - name: change owner and group for certificate
+      file: path={{instpath}}/elasticsearch/config/elastic-certificates.p12 owner={{ansible_ssh_user}}
+    - name: start elasticsearch on extend nodes
+      shell: "cd {{instpath}}/elasticsearch/bin/;nohup ./elasticsearch -d & sleep 3"
+#    - name: wait for 30s
+#      pause:
+#        seconds: 30
+    - name: check process numbers on extend nodes
+      shell: "ps -ef|grep {{instpath}}/elasticsearch|grep -v grep|wc -l"
+      register: presult
+    - name: start success
+      shell: echo elasticsearch started
+      when: presult.stdout|int > 0
+    - name: start failed
+      fail: msg="elasticsearch start failed
+      when: presult.stdout|int == 0

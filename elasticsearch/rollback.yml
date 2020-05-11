@@ -1,0 +1,27 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+
+    - name: check whether elasticearch process running
+      shell: ps -ef |grep {{instpath}}|grep -v ansible|grep -v grep|wc -l
+      register: result
+    - name: kill running process which start from this directory
+      shell: ps -ef|grep {{instpath}}|grep -v ansible|grep -v grep|awk '{print $2}'|xargs kill -9
+      when: result.stdout|int>0
+
+    - name: rollback dirs {{instpath}}
+      file:
+        path: '{{instpath}}'
+        state: absent
+
+    # when apptype is es we need to restore the system conf files use admin privillages
+    - name: rollback elasticsearch sysctl
+      become: yes
+      shell: if `ls /etc/sysctl.conf.ansible.es 1> /dev/null 2>&1`;then `echo y|mv /etc/sysctl.conf.ansible.es /etc/sysctl.conf`; fi;
+    - name: rollback elasticsearch limits
+      become: yes
+      shell: if `ls /etc/security/limits.conf.ansible.es 1> /dev/null 2>&1`;then `echo y|mv /etc/security/limits.conf.ansible.es /etc/security/limits.conf`; fi;
+    - name: rollback bash_profile
+      shell: if `ls ~/.bash_profile.ansible.es 1> /dev/null 2>&1`;then `echo y|mv ~/.bash_profile.ansible.es ~/.bash_profile; source ~/.bash_profile`; fi;
