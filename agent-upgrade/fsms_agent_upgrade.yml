@@ -35,6 +35,7 @@
 ### start agent
     - name: start agent
       shell: 'nohup {{instpath}}/agent/bin/control start agent & sleep 2'
+### check start status
     - name: catch process num
       shell: 'ps -ef |grep ultraagent|grep {{ansible_ssh_user}}|grep -v grep|wc -l'
       register: presult
