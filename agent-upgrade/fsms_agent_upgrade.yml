@@ -3,7 +3,7 @@
   become: no
   gather_facts: no
   tasks:
-
+#
     - name: check install directory status
       stat:
         path: '{{instpath}}'
