@@ -1,0 +1,111 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+    - name: check whether probe is running
+      shell: ps -ef|grep ultraprobe |grep -v ansible|grep {{ansible_ssh_user}}|grep -v grep |wc -l
+      register: result
+    - name: exit with already installed ultraprobe on this host
+      fail: msg="probe process is running"
+      when: result.stdout|int>0
+
+    - name: check whether probe directory exist
+      stat:
+        path: '{{instpath}}/bit-oa-probe'
+      register: probepath
+    - name: exit with already installed ultraprobe under path {{instpath}}
+      fail: msg="probe directory already exist"
+      when: probepath.stat.isdir is defined and probepath.stat.isdir
+
+    - name: check install directory status
+      stat:
+        path: '{{instpath}}'
+      register: pbig
+    - name: create install directory
+      become: yes
+#      become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
+#    - name: exit with can not create install directory
+#      fail: msg="no permission to create {{instpath}}"
+#      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+
+# check and modify /etc/sysctl.conf file
+    - name: backup sysctl.conf file
+      become: yes
+      shell: echo y|cp /etc/sysctl.conf /etc/sysctl.conf.ansible.probe
+    - name: check /etc/sysctl.conf file
+      shell: cat /etc/sysctl.conf|grep '^net.ipv4.ip_local_port_range'|awk -F '=' '{print $2}'|awk '{print $1}'
+      register: rangeresult
+    - name: modify /etc/sysctl.conf file for port range
+      sysctl:
+        name: "net.ipv4.ip_local_port_range"
+        value: "10240 65000"
+        sysctl_set: yes
+        reload: "yes"
+      when: rangeresult.stdout|int == 0
+    - name: modify sysctl.conf file for tcp
+      become: yes
+      #become_method: su
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_set: yes
+        reload: "{{ item.reload }}"
+      with_items:
+        - { name: "net.ipv4.tcp_syncookies", value: 1, reload: no }
+        - { name: "vm.max_map_count", value: 655360, reload: no }
+        - { name: "net.ipv4.tcp_tw_reuse", value: 1, reload: no }
+        - { name: "net.ipv4.tcp_tw_recycle", value: 1, reload: no }
+        - { name: "net.ipv4.tcp_fin_timeout", value: 30, reload: yes }
+
+    - name: backup limits.conf file
+      become: yes
+      shell: echo y|cp /etc/security/limits.conf /etc/security/limits.conf.ansible.probe
+    - name: modify {{ansible_ssh_user}} limits
+      become: yes
+      pam_limits:
+        domain: "{{ansible_ssh_user}}"
+        limit_type: "{{ item.limit_type }}"
+        limit_item: "{{ item.limit_item }}"
+        value: "{{ item.value }}"
+      with_items:
+        - { limit_type: soft, limit_item: nofile, value: 655360 }
+        - { limit_type: hard, limit_item: nofile, value: 655360 }
+        - { limit_type: soft, limit_item: memlock, value: unlimited }
+        - { limit_type: hard, limit_item: memlock, value: unlimited }
+        - { limit_type: soft, limit_item: nproc, value: 65535 }
+        - { limit_type: hard, limit_item: nproc, value: 65535 }
+
+    - name: Disable SELinux
+      selinux:
+        state: disabled
+    - name: stop firewall use iptables
+      shell: service iptables stop
+      ignore_errors: yes
+    - name: stop firewall use firewalld
+      shell: service firewalld stop
+      ignore_errors: yes
+# copy and deploy probe
+    - name: install probe
+      unarchive: src=/opt/ansible/ultraprobe/packages/bitoaprobe.tar.gz dest={{instpath}}
+    - name: update application.properties file
+      template: src=/opt/ansible/ultraprobe/templates/application.properties.j2 dest={{instpath}}/bit-oa-probe/conf/application.properties
+    - name: update local.properties file
+      template: src=/opt/ansible/ultraprobe/templates/local.properties.j2 dest={{instpath}}/bit-oa-probe/conf/local.properties
+
+# start probe
+    - name: start probes
+      shell: source ~/.bash_profile; cd {{instpath}}/bit-oa-probe/bin; nohup ./startProbe.sh & sleep 2
+    - name: check probe process numbers
+      shell: ps -ef|grep bit-oa-probe|grep -v ansible|grep {{ansible_ssh_user}}|grep -v grep|wc -l
+      register: presult
+    - name: probe start success
+      command: echo start success
+      when: presult.stdout|int>0
+    - name: probe start failed
+      command: echo start failed
+      when: presult.stdout|int==0

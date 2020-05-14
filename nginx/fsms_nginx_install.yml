@@ -1,5 +1,5 @@
 ---
-- hosts: 192.168.181.130
+- hosts: groups
   become: no
   gather_facts: no
   tasks:
@@ -35,23 +35,43 @@
       fail: msg="no permission to create {{instpath}}"
       when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
 ### install depends software
+    - name: create depends directory
+      become: yes
+      file: dest={{instpath}}/nginx-depends mode=0755 state=directory recurse=yes owner={{ansible_ssh_user}}
+    - name: copy depends soft packages {{item}}
+      copy:
+        src: /opt/ansible/nginx/packages/{{item}}
+        dest: '{{instpath}}/nginx-depends/{{item}}'
+      with_items:
+#        - gcc-4.4.7-23.el6.x86_64.rpm
+        - openssl-1.0.1e-57.el6.x86_64.rpm
+        - openssl-devel-1.0.1e-57.el6.x86_64.rpm
+        - pcre-7.8-7.el6.x86_64.rpm
+        - pcre-devel-7.8-7.el6.x86_64.rpm
+        - zlib-1.2.3-29.el6.x86_64.rpm
+        - zlib-devel-1.2.3-29.el6.x86_64.rpm
+#      task_timeout: 50
+
     - name: install depends soft packages
       become: yes
-      yum: 
-        name:
-          - gcc
-          - pcre
-          - pcre-devel
-          - openssl
-          - openssl-devel
-          - zlib
-          - zlib-devel
-        state: present
+      shell: 'cd {{instpath}}/nginx-depends;if `rpm -qa|grep -w {{item.split(".")[0:-1]|join(".")}} 1> /dev/null 2>&1`;then echo already installed;else `rpm -i {{item}}`;fi'
+      with_items:
+#        - gcc-4.4.7-23.el6.x86_64.rpm
+        - openssl-1.0.1e-57.el6.x86_64.rpm
+        - openssl-devel-1.0.1e-57.el6.x86_64.rpm
+        - pcre-7.8-7.el6.x86_64.rpm
+        - pcre-devel-7.8-7.el6.x86_64.rpm
+        - zlib-1.2.3-29.el6.x86_64.rpm
+        - zlib-devel-1.2.3-29.el6.x86_64.rpm
 ### deploy nginx
     - name: deploy nginx
       unarchive: src=/opt/ansible/nginx/packages/nginx-1.16.1.tar.gz dest={{instpath}}
     - name: build nginx
       shell: cd {{instpath}}/nginx-1.16.1; ./configure --prefix={{instpath}}/nginx;make && make install
+    - name: remove nginx source files
+      file:
+        path: {{instpath}}/nginx-1.16.1
+        state: absent
     - name: replace config file 
       template: src=/opt/ansible/nginx/templates/nginx.conf.j2 dest={{instpath}}/nginx/conf/nginx.conf
 ### start nginx

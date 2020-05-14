@@ -99,9 +99,7 @@
 ### start zookeeper
     - name: start zookeeper
       #shell: 'cd {{instpath}}/zookeeper/bin;nohup ./zkServer.sh start &'
-      shell: 'source ~/.bash_profile;cd {{instpath}}/zookeeper/bin;nohup ./zkServer.sh start & sleep 2'
-      tags:
-        - start zookeeper
+      shell: 'source ~/.bash_profile;cd {{instpath}}/zookeeper/bin;nohup ./zkServer.sh start & sleep 3'
     - name: wait for 5s
       pause:
         seconds: 5

@@ -1,0 +1,16 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+    - name: install depends soft packages
+      become: yes
+      shell: 'cd {{instpath}}/nginx-depends;rpm -i {{item}}'
+      with_items:
+#        - gcc-4.4.7-23.el6.x86_64.rpm
+        - openssl-1.0.1e-57.el6.x86_64.rpm
+        - openssl-devel-1.0.1e-57.el6.x86_64.rpm
+        - pcre-7.8-7.el6.x86_64.rpm
+        - pcre-devel-7.8-7.el6.x86_64.rpm
+        - zlib-1.2.3-29.el6.x86_64.rpm
+        - zlib-devel-1.2.3-29.el6.x86_64.rpm

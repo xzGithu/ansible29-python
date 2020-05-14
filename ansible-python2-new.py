@@ -109,7 +109,7 @@ class MyInventory:
     def __init__(self, hostsresource, sources=None):
         """
         初始化函数
-        :param hostsresource: 主机资源可以有2种形式
+        :param hostsresource: 主机资源可以有2种形式,目前剧本中仅支持groups组名下的主机，list形式默认加到了groups组中
         列表形式: [{"ip": "192.168.1.1", "port": "22", "username": "root", "password": "123456"}]
         字典形式: {
                     "Group1": {

@@ -14,7 +14,7 @@
       file:
         path: '{{instpath}}'
         state: absent
-    - name: rollback old ultraagent directory
+    - name: resotre old ultraagent directory
       shell: mv {{prepath}}/agent-backup {{prepath}}/agent
 
     - name: start old ultraagent process

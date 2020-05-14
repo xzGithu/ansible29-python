@@ -1,0 +1,22 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+    - name: check whether probe process is running
+      shell: ps -ef|grep bit-oa-probe|grep -v ansible|grep {{ansible_ssh_user}}|grep -v grep|wc -l
+      register: presult
+
+    - name: kill running probe process
+      shell: ps -ef|grep bit-oa-probe|grep -v ansible|grep {{ansible_ssh_user}}|grep -v grep|awk '{print $2}'|xargs kill -9
+      when: presult.stdout|int>0
+
+    - name: rollback etc/sysctl.conf
+      shell: if `ls /etc/sysctl.conf.ansible.probe 1> /dev/null 2>&1`;then `echo y|mv /etc/sysctl.conf.ansible.probe /etc/sysctl.conf`; fi;
+    - name: rollback etc/security/limits.conf
+      shell: if `ls /etc/security/limits.conf.ansible.probe 1> /dev/null 2>&1`;then `echo y|mv /etc/security/limits.conf.ansible.probe /etc/security/limits.conf`; fi;
+
+    - name: rollback install directory {{instpath}}
+      file:
+        path: '{{instpath}}'
+        state: absent

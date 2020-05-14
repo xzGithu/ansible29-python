@@ -85,33 +85,33 @@
       #when: ansible_become_pass is defined
 
 ### install java
-    - name: check java environment
-      #shell: 'java -version'
-      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
-      ignore_errors: yes
-      register: javaenv
-    - name: backup bash_profile
-      shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.es
-      when: javaenv.stdout|int==0
-    - name: install java
-      unarchive: src=/opt/ansible/jdk/jdk.tar.gz dest={{instpath}}
-      when: javaenv.stdout|int==0
-    - name: set java environment
-      lineinfile: path=~/.bash_profile regexp="{{item.position}}" line="{{item.value}}" state=present insertbefore="^export PATH=(.*)"
-      with_items:
-        - {position: "^export JAVA_HOME=(.*)", value: "export JAVA_HOME={{instpath}}/jdk"}
-      when: javaenv.stdout|int==0
-    - name: set path env
-      lineinfile: path=~/.bash_profile line="{{item.value}}"  insertafter="^export PATH=(.*)"
-      with_items:
-        - {position: "export PATH=", value: "export PATH=$JAVA_HOME/bin:$PATH"}
-      when: javaenv.stdout|int==0
-    - name: update permission for java/bin # modify 
-      file: dest={{instpath}}/jdk/bin mode=0755 recurse=yes
-      when: javaenv.stdout|int==0
-    - name: flush bash_profile for {{ansible_ssh_user}} #flush env
-      shell: source ~/.bash_profile
-      when: javaenv.stdout|int==0
+#    - name: check java environment
+#      #shell: 'java -version'
+#      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+#      ignore_errors: yes
+#      register: javaenv
+#    - name: backup bash_profile
+#      shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.es
+#      when: javaenv.stdout|int==0
+#    - name: install java
+#      unarchive: src=/opt/ansible/jdk/jdk.tar.gz dest={{instpath}}
+#      when: javaenv.stdout|int==0
+#    - name: set java environment
+#      lineinfile: path=~/.bash_profile regexp="{{item.position}}" line="{{item.value}}" state=present insertbefore="^export PATH=(.*)"
+#      with_items:
+#        - {position: "^export JAVA_HOME=(.*)", value: "export JAVA_HOME={{instpath}}/jdk"}
+#      when: javaenv.stdout|int==0
+#    - name: set path env
+#      lineinfile: path=~/.bash_profile line="{{item.value}}"  insertafter="^export PATH=(.*)"
+#      with_items:
+#        - {position: "export PATH=", value: "export PATH=$JAVA_HOME/bin:$PATH"}
+#      when: javaenv.stdout|int==0
+#    - name: update permission for java/bin # modify
+#      file: dest={{instpath}}/jdk/bin mode=0755 recurse=yes
+#      when: javaenv.stdout|int==0
+#    - name: flush bash_profile for {{ansible_ssh_user}} #flush env
+#      shell: source ~/.bash_profile
+#      when: javaenv.stdout|int==0
 ### deploy es app
     - name: copy and unzip elasticsearch
       unarchive: 'src=/opt/ansible/elasticsearch/packages/elasticsearch.tar.gz dest={{instpath}}'
