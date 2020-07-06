@@ -113,10 +113,10 @@ class MyInventory:
         """
         初始化函数
         :param hostsresource: 主机资源可以有2种形式
-        列表形式: [{"ip": "192.168.1.1", "port": "22", "username": "root", "password": "123456"}]
+        列表形式: [{"ip": "192.168.1.1", "sshport": "22", "username": "root", "password": "123456"}]
         字典形式: {
                     "Group1": {
-                        "hosts": [{"ip": "192.168.1.1", "port": "22", "username": "root", "password": None}],
+                        "hosts": [{"ip": "192.168.1.1", "sshport": "22", "username": "root", "password": None}],
                         "vars": {"var": "ansible"}
                 }
         """
@@ -131,7 +131,7 @@ class MyInventory:
     def _add_dynamic_group(self, hosts_list, groupname, groupvars=None, cluster=None):
         """
         动态添加主机到指定的主机组
-        :param hosts_list: 主机列表 [{"ip": "192.168.100.10", "port": "22", "username": "root", "password": None}, {}]
+        :param hosts_list: 主机列表 [{"ip": "192.168.100.10", "sshport": "22", "username": "root", "password": None}, {}]
         :param groupname:  组名称
         :param groupvars:  组变量，格式为字典
         :param cluster:  先前集群信息，字典列表
@@ -178,7 +178,7 @@ class MyInventory:
             if hostip is None:
                 print("IP地址为空，跳过该元素。")
                 continue
-            hostport = host.get("port", "22")
+            hostport = host.get("sshport", "22")
             username = host.get("username", "root")
             password = host.get("password", None)
             ssh_key = host.get("ssh_key", None)
@@ -204,7 +204,7 @@ class MyInventory:
 
                 # 添加其他变量
                 for key, value in host.items():
-                    if key not in ["ip", "hostname", "port", "username", "password", "ssh_key", "python_interpreter"]:
+                    if key not in ["ip", "hostname", "sshport", "username", "password", "ssh_key", "python_interpreter"]:
                         self._inventory._inventory.set_variable(hostip, key, value)
 
             except Exception as err:
@@ -387,8 +387,8 @@ class AnsibleAPI:
 def main():
     hosts_dict = {
         "groups": {
-            "hosts": [{"ip": "192.168.181.129", "port": "22", "username": "root", "password": None, "var1": "host"},
-                      {"ip": "192.168.181.79", "port": "22", "username": "root", "password": None, "var1": "host1"}],
+            "hosts": [{"ip": "192.168.181.129", "sshport": "22", "username": "root", "password": None, "var1": "host"},
+                      {"ip": "192.168.181.79", "sshport": "22", "username": "root", "password": None, "var1": "host1"}],
             "vars": {"var2": "ansible"}
         }
     }
