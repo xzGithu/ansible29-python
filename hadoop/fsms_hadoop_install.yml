@@ -42,7 +42,8 @@
       shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.hadoop
     - name: check java env
 #      shell: cat ~/.bash_profile|grep '^export[[:space:]]*JAVA_HOME'|grep -v grep|wc -l
-      shell: cat /etc/profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+#      shell: cat /etc/profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
       ignore_errors: yes
       register: javaenv
     - name: install java

@@ -6,8 +6,8 @@
 
 import sys
 import json
-import shutil# 用于读取YAML和JSON格式的文件
-from ansible.parsing.dataloader import DataLoader# 用于存储各类变量信息
+import shutil  # 用于读取YAML和JSON格式的文件
+from ansible.parsing.dataloader import DataLoader  # 用于存储各类变量信息
 from ansible.vars.manager import VariableManager
 from ansible import constants as C  # 用于获取ansible内置的一些常量
 from ansible.module_utils.common.collections import ImmutableDict  # 用于自定制一些选项
@@ -24,8 +24,9 @@ class PlaybookCallbackModule(CallbackBase):
     """
     重写playbook callbackBase类
     """
+
     def __init__(self, *args, **kwargs):
-        super(PlaybookCallbackModule,self).__init__(*args, **kwargs)
+        super(PlaybookCallbackModule, self).__init__(*args, **kwargs)
         self.host_ok = {}
         self.host_skipped = {}
         self.host_unreachable = {}
@@ -42,36 +43,36 @@ class PlaybookCallbackModule(CallbackBase):
     def v2_runner_on_ok(self, result, *args, **kwargs):
         if result._host.get_name() in self.host_ok.keys():
             try:
-                #self.host_ok[result._host.get_name()].append(result.task_name+':'+result._result["stderr"])
-                self.host_ok[result._host.get_name()].append(result.task_name+result._result["stderr"])
+                # self.host_ok[result._host.get_name()].append(result.task_name+':'+result._result["stderr"])
+                self.host_ok[result._host.get_name()].append(result.task_name + result._result["stderr"])
             except:
                 self.host_ok[result._host.get_name()].append(result.task_name)
         else:
             try:
-                self.host_ok[result._host.get_name()] = [result.task_name+result._result["stderr"]]
-                #self.host_ok[result._host.get_name()] = [result.task_name+':'+result._result["stderr"]]
+                self.host_ok[result._host.get_name()] = [result.task_name + result._result["stderr"]]
+                # self.host_ok[result._host.get_name()] = [result.task_name+':'+result._result["stderr"]]
             except:
                 self.host_ok[result._host.get_name()] = [result.task_name]
         if result.task_name == 'get elastic password':
             self.host_password = result._result["stdout"]
-        #print(result._result)
+        # print(result._result)
         print(self.host_ok)
-        #self.host_ok[result._host.get_name()] = result
+        # self.host_ok[result._host.get_name()] = result
 
     def v2_runner_on_failed(self, result, *args, **kwargs):
         if result._host.get_name() in self.host_failed.keys():
-            self.host_failed[result._host.get_name()].append(result.task_name+':'+result._result["msg"])
+            self.host_failed[result._host.get_name()].append(result.task_name + ':' + result._result["msg"])
         else:
-            self.host_failed[result._host.get_name()] = [result.task_name+':'+result._result["msg"]]
-        #print(result._result)
-        #self.host_failed[result._host.get_name()] = result
+            self.host_failed[result._host.get_name()] = [result.task_name + ':' + result._result["msg"]]
+            # print(result._result)
+            # self.host_failed[result._host.get_name()] = result
 
     def v2_runner_on_skipped(self, result):
         if result._host.get_name() in self.host_skipped.keys():
             self.host_skipped[result._host.get_name()].append(result.task_name)
         else:
             self.host_skipped[result._host.get_name()] = [result.task_name]
-        #self.host_skipped[result._host.get_name()] = result
+            # self.host_skipped[result._host.get_name()] = result
 
     def v2_playbook_on_stats(self, stats):
         hosts = sorted(stats.processed.keys())
@@ -85,10 +86,12 @@ class PlaybookCallbackModule(CallbackBase):
                 "failed": t['failures']
             }
 
+
 class ResuCallbackModule(CallbackBase):
     """
     重写command callbackBase类
     """
+
     def __init__(self, *args, **kwargs):
         super(ResuCallbackModule, self).__init__(*args, **kwargs)
         self.host_ok = {}
@@ -110,10 +113,10 @@ class MyInventory:
         """
         初始化函数
         :param hostsresource: 主机资源可以有2种形式
-        列表形式: [{"ip": "192.168.1.1", "port": "22", "username": "root", "password": "123456"}]
+        列表形式: [{"ip": "192.168.1.1", "sshport": "22", "username": "root", "password": "123456"}]
         字典形式: {
                     "Group1": {
-                        "hosts": [{"ip": "192.168.1.1", "port": "22", "username": "root", "password": None}],
+                        "hosts": [{"ip": "192.168.1.1", "sshport": "22", "username": "root", "password": None}],
                         "vars": {"var": "ansible"}
                 }
         """
@@ -128,7 +131,7 @@ class MyInventory:
     def _add_dynamic_group(self, hosts_list, groupname, groupvars=None, cluster=None):
         """
         动态添加主机到指定的主机组
-        :param hosts_list: 主机列表 [{"ip": "192.168.100.10", "port": "22", "username": "root", "password": None}, {}]
+        :param hosts_list: 主机列表 [{"ip": "192.168.100.10", "sshport": "22", "username": "root", "password": None}, {}]
         :param groupname:  组名称
         :param groupvars:  组变量，格式为字典
         :param cluster:  先前集群信息，字典列表
@@ -142,13 +145,13 @@ class MyInventory:
         if groupvars:
             for key, value in groupvars.items():
                 self._inventory._inventory.set_variable(my_group, key, value)
-                #my_group.set_variable(key, value)
+                # my_group.set_variable(key, value)
         if cluster:
-            #print(cluster)
+            # print(cluster)
             setcluster = sorted(cluster["clustervalue"])
-            #print(setcluster)
+            # print(setcluster)
             self._inventory._inventory.set_variable(my_group, "pre_clusters", setcluster)
-            #pre_group = self._inventory.add_group("pregroup")
+            # pre_group = self._inventory.add_group("pregroup")
             for i in setcluster:
                 hostip = i.split(':')[0]
                 self._inventory.add_host(hostip, "pregroup")
@@ -161,13 +164,13 @@ class MyInventory:
                 self._inventory._inventory.set_variable(hostip, "ansible_ssh_user", username)
                 self._inventory._inventory.set_variable(hostip, "ansible_ssh_pass", password)
                 self._inventory._inventory.set_variable(hostip, "inspath", installpath)
-                if cluster["clustertype"]=="flink":
+                if cluster["clustertype"] == "flink":
                     jmip = i.split(':')[-2]
                     self._inventory._inventory.set_variable(hostip, "jmip", jmip)
 
         allhosts = []  # 记录所有主机生成seed供安装集群时使用
         # 添加一个主机
-        hosts_list =  sorted(hosts_list, key=lambda i:i["ip"])
+        hosts_list = sorted(hosts_list, key=lambda i: i["ip"])
         for host in hosts_list:
             hostname = host.get("hostname", None)
             hostip = host.get("ip", None)
@@ -175,7 +178,7 @@ class MyInventory:
             if hostip is None:
                 print("IP地址为空，跳过该元素。")
                 continue
-            hostport = host.get("port", "22")
+            hostport = host.get("sshport", "22")
             username = host.get("username", "root")
             password = host.get("password", None)
             ssh_key = host.get("ssh_key", None)
@@ -201,7 +204,7 @@ class MyInventory:
 
                 # 添加其他变量
                 for key, value in host.items():
-                    if key not in ["ip", "hostname", "port", "username", "password", "ssh_key", "python_interpreter"]:
+                    if key not in ["ip", "hostname", "sshport", "username", "password", "ssh_key", "python_interpreter"]:
                         self._inventory._inventory.set_variable(hostip, key, value)
 
             except Exception as err:
@@ -210,9 +213,9 @@ class MyInventory:
         self._inventory._inventory.set_variable(my_group, "seed_hosts", allhosts)
         self._inventory._inventory.set_variable(pre_group, "flink_hosts", allhosts)
         self._inventory._inventory.set_variable(my_group, "firstnode", allhosts[0])
-        if len(allhosts)>1:
+        if len(allhosts) > 1:
             self._inventory._inventory.set_variable(my_group, "secondnode", allhosts[1])
-        #if pre_group:
+        # if pre_group:
         self._inventory.add_host(allhosts[0], "pregroup")
         self._inventory._inventory.set_variable(pre_group, "excludenode", allhosts[0])
 
@@ -226,9 +229,11 @@ class MyInventory:
         elif isinstance(self._hostsresource, dict):
             for groupname, hosts_and_vars in self._hostsresource.items():
                 if "cluster" in hosts_and_vars.keys():
-                    self._add_dynamic_group(hosts_and_vars.get("hosts"), groupname, hosts_and_vars.get("vars"), hosts_and_vars.get("cluster"))
+                    self._add_dynamic_group(hosts_and_vars.get("hosts"), groupname, hosts_and_vars.get("vars"),
+                                            hosts_and_vars.get("cluster"))
                 else:
-                    self._add_dynamic_group(hosts_and_vars.get("hosts"), groupname, hosts_and_vars.get("vars"), cluster=None)
+                    self._add_dynamic_group(hosts_and_vars.get("hosts"), groupname, hosts_and_vars.get("vars"),
+                                            cluster=None)
 
     @property
     def INVENTORY(self):
@@ -245,6 +250,7 @@ class MyInventory:
         :return:
         """
         return self._variable_manager
+
 
 class AnsibleAPI:
     """
@@ -291,7 +297,8 @@ class AnsibleAPI:
             private_key_file="/root/.ssh/id_rsa",
             host_key_checking=False,
             forks=4,
-            #ssh_common_args='-o StrictHostKeyChecking=no -o ProxyCommand="ssh -W %h:%p -p 22 -q 192.168.181.131"', # 代理设置
+            # 当使用代理是此处ssh设置
+            # ssh_common_args='-o StrictHostKeyChecking=no -o ProxyCommand="ssh -W %h:%p -p 22 -q 192.168.181.131"', # 代理设置
             ssh_common_args='-o StrictHostKeyChecking=no',
             ssh_extra_args='-o StrictHostKeyChecking=no',
             verbosity=0,
@@ -338,6 +345,7 @@ class AnsibleAPI:
                 tqm.cleanup()
             # 这个临时目录会在 ~/.ansible/tmp/ 目录下
             shutil.rmtree(C.DEFAULT_LOCAL_TMP, True)
+
     def get_run_result(self):
         result_raw = {'success': {}, 'failed': {}, 'unreachable': {}}
         for host, result in self.callback.host_ok.items():
@@ -351,20 +359,21 @@ class AnsibleAPI:
         print(json.dumps(result_raw, indent=4))
 
     def get_play_result(self):
-        results_raw = {'skipped': {}, 'failed': {}, 'ok': {}, "status": {}, 'unreachable': {}, "changed": {}, "espass": {}}
+        results_raw = {'skipped': {}, 'failed': {}, 'ok': {}, "status": {}, 'unreachable': {}, "changed": {},
+                       "espass": {}}
         for host, result in self.callback.host_ok.items():
             results_raw['ok'][host] = result
 
         for host, result in self.callback.host_failed.items():
             results_raw['failed'][host] = result
 
-        #for host, result in self.callback.host_status.items():
+        # for host, result in self.callback.host_status.items():
         #    results_raw['status'][host] = result
-        #print('status', self.results_raw)
+        # print('status', self.results_raw)
 
-        #for host, result in self.callback.host_changed.items():
+        # for host, result in self.callback.host_changed.items():
         #    results_raw['changed'][host] = result
-        #print('changed', self.results_raw)
+        # print('changed', self.results_raw)
 
         for host, result in self.callback.host_skipped.items():
             results_raw['skipped'][host] = result
@@ -374,27 +383,29 @@ class AnsibleAPI:
         results_raw['espass'] = self.callback.host_password
         print(json.dumps(results_raw, indent=4))
 
+
 def main():
     hosts_dict = {
         "groups": {
-            "hosts": [{"ip": "192.168.181.129", "port": "22", "username": "root", "password": None, "var1":"host"},{"ip": "192.168.181.79", "port": "22", "username": "root", "password": None, "var1": "host1"}],
+            "hosts": [{"ip": "192.168.181.129", "sshport": "22", "username": "root", "password": None, "var1": "host"},
+                      {"ip": "192.168.181.79", "sshport": "22", "username": "root", "password": None, "var1": "host1"}],
             "vars": {"var2": "ansible"}
         }
     }
 
-    
     playbook_yml = sys.argv[1]
     hostsresource = eval(sys.argv[2])
     # get current group's host
     rbt = AnsibleAPI(hostsresource, sources=None)
-    #print(rbt._inventory.groups.get("pregroup").get_hosts())
-    #print(rbt._inventory.groups.get("pregroup").get_vars())
-    #print(rbt._inventory.hosts.get("192.168.95.114").get_vars())
-    #rbt.run_module(module_name='command', module_args='pwd', hosts=["groups"])
+    # print(rbt._inventory.groups.get("pregroup").get_hosts())
+    # print(rbt._inventory.groups.get("pregroup").get_vars())
+    # print(rbt._inventory.hosts.get("192.168.95.114").get_vars())
+    # rbt.run_module(module_name='command', module_args='pwd', hosts=["groups"])
 
     rbt.run_playbook(playbook_yml=playbook_yml)
 
     rbt.get_play_result()
+
 
 if __name__ == "__main__":
     try:
