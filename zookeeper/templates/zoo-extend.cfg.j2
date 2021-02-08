@@ -1,0 +1,23 @@
+tickTime=2000
+initLimit=20
+syncLimit=10
+#dataDir={{instpath}}/zookeeper/data
+dataDir={{datapath}}
+dataLogDir={{instpath}}/zookeeper/dataLogDir
+clientPort={{port}}
+quorumListenOnAllIPs=true
+{% set cluster_address=[] -%}
+{% set pre_hosts = groups.groups %}
+{% for host in pre_hosts -%}
+  {% set pre_ip = hostvars[host].inventory_hostname | default(host) -%}
+  {% set pre_portc = hostvars[host].transferport -%}
+  {% set pre_portd = hostvars[host].voteport -%}
+  {% set _ = cluster_address.append("%s:%s:%s" % (pre_ip, pre_portc, pre_portd)) -%}  
+{% endfor -%}
+{% for host_name in pre_clusters|zkservers(cluster_address)%}
+server.{{ loop.index }}={{ host_name }}
+{% endfor %}
+authProvider.1=org.apache.zookeeper.server.auth.SASLAuthenticationProvider
+requireClientAuthScheme=sasl
+jaasLoginRenew=3600000
+admin.serverPort={{adminport}}

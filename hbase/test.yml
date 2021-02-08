@@ -1,0 +1,10 @@
+---
+- hosts: 192.168.181.79
+  become: no
+  gather_facts: no
+  tasks:
+    - name: echo yes
+      shell: echo yes
+    - name: re timeout
+      shell: 'sleep 10;echo test'
+#      task_timeout: 5

@@ -1,0 +1,242 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+### check whether hadoop is running
+    - name: check whether hadoop is running
+      shell: ps -ef|grep {{instpath}}/hadoop|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed hadoop
+      #shell: "ps -ef |grep {{instpath}}/flink|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="hadoop already running on this host"
+      when: result.stdout|int>0  # change to type int
+### check whether hadoop dir exists
+    - name: check hadoop dir status
+      stat: 
+        path: '{{ instpath }}/hadoop'
+      register: p
+    - name: exit with already installed hadoop under path {{instpath}}
+      fail: msg="already installed hadoop under this dir" 
+      when: p.stat.isdir is defined and p.stat.isdir
+
+    - name: check whether install path is exist
+      stat: 
+        path: '{{instpath}}'
+      register: p
+    - name: create directory for install path {{instpath}}
+      become: yes
+      #become_method: su
+      file:
+        dest: "{{instpath}}"
+        mode: 0777
+        state: directory
+        owner: "{{ansible_ssh_user}}"
+      when: p.stat.exists is defined and p.stat.exists == False
+      #when: ansible_become_pass is defined and p.stat.exists is defined and p.stat.exists == False
+    - name: exit with can not create path {{instpath}}
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and p.stat.exists is defined and p.stat.exists == False
+### check java env
+    - name: backup bash_profile
+      shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.hadoop
+    - name: check java env
+#      shell: cat ~/.bash_profile|grep '^export[[:space:]]*JAVA_HOME'|grep -v grep|wc -l
+      shell: cat /etc/profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+      ignore_errors: yes
+      register: javaenv
+    - name: install java
+      unarchive: src=/opt/ansible/jdk/jdk.tar.gz dest={{instpath}}
+      when: javaenv.stdout|int==0
+    - name: set java env 
+      lineinfile: path=~/.bash_profile regexp="{{item.position}}" line="{{item.value}}" state=present insertbefore="^export PATH=(.*)"
+      with_items:
+        - {position: "^export JAVA_HOME=(.*)", value: "export JAVA_HOME={{instpath}}/jdk"}
+      when: javaenv.stdout|int==0
+    - name: set path env 
+      lineinfile: path=~/.bash_profile line="{{item.value}}"  insertafter="^export PATH=(.*)"
+      with_items:
+        - {position: "export PATH=", value: "export PATH=$JAVA_HOME/bin:$PATH"}
+      when: javaenv.stdout|int==0
+    - name: update permission for java/bin # modify 
+      file: dest={{instpath}}/jdk/bin mode=0755 recurse=yes
+      when: javaenv.stdout|int==0
+    - name: flush bash_profile #flush env
+      shell: source ~/.bash_profile
+      when: javaenv.stdout|int==0
+    - name: get hadoop env
+      shell: "cat ~/.bash_profile|grep '^export[[:space:]]*HADOOP_HOME'|grep -v grep|wc -l"
+      register: hresult
+    - name: set hadoop home
+      lineinfile: path=~/.bash_profile regexp="^export HADOOP_HOME=" line="export HADOOP_HOME={{instpath}}/hadoop"
+      when: hresult.stdout|int == 0
+    - name: set path env 
+      lineinfile: path=~/.bash_profile line="export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH"
+      when: hresult.stdout|int == 0
+    - name: flush bash_profile again
+      shell: source ~/.bash_profile
+      when: hresult.stdout|int == 0
+### configure no password for install users
+    - name: check public key file
+      stat:
+        path: ~/.ssh/id_rsa.pub
+      when: ansible_ssh_host == firstnode or ansible_ssh_host == secondnode
+      register: keypath
+      ignore_errors: yes
+    - name: configure no password for "{{ansible_ssh_user}}"
+      shell: ssh-keygen -t rsa -b 2048 -N '' -f ~/.ssh/id_rsa
+      when: keypath.stat.exists is defined and keypath.stat.exists == false and ansible_ssh_host == firstnode
+    - name: configure no password for "{{ansible_ssh_user}}"
+      shell: ssh-keygen -t rsa -b 2048 -N '' -f ~/.ssh/id_rsa
+      when: keypath.stat.exists is defined and keypath.stat.exists == false and ansible_ssh_host == secondnode
+    - name: fetch public key to local
+      fetch: src=~/.ssh/id_rsa.pub dest=./autho
+      when: inventory_hostname == firstnode or ansible_ssh_host == secondnode
+    - name: deliver auth keys
+      authorized_key:
+        user: "{{ansible_ssh_user}}"
+        key: "{{ lookup('file', './autho/{{firstnode}}/home/{{hostvars[firstnode].ansible_ssh_user}}/.ssh/id_rsa.pub') }}"
+        state: present
+    - name: deliver secondnode auth keys
+      authorized_key:
+        user: "{{ansible_ssh_user}}"
+        key: "{{ lookup('file', './autho/{{secondnode}}/home/{{hostvars[secondnode].ansible_ssh_user}}/.ssh/id_rsa.pub') }}"
+        state: present
+### get each pubkey ,add to known_hosts
+    - name: For each host, scan for its ssh public key
+      #shell: "ssh-keyscan {{ item }}"
+      shell: "ssh-keyscan {{hostvars[item].hostname}}"
+      with_items: "{{ seed_hosts }}"
+      register: ssh_known_host_results
+      ignore_errors: yes
+      when: ansible_ssh_host == firstnode or ansible_ssh_host == secondnode
+    - name: add host to know_hosts
+      known_hosts:
+        host: "{{hostvars[item.item].hostname}}"
+        state: present
+        key: "{{ item.stdout }}"
+      with_items: "{{ ssh_known_host_results.results }}"
+      when: inventory_hostname == firstnode or ansible_ssh_host == secondnode
+### configure etc/hosts for every host
+    - name: backup etc hosts
+      become: yes
+      become_method: su
+      shell: cp /etc/hosts /etc/hosts.ansible.hadoop
+      when: ansible_become_pass is defined
+    - name: modify etc/hosts file
+      become: yes
+      become_method: su
+      lineinfile: 
+        dest: /etc/hosts
+        line: '{{item}} {{hostvars[item].hostname}}'
+      with_items: "{{seed_hosts}}"
+### deploy hadoop
+    - name: install hadoop
+      unarchive: src=/opt/ansible/hadoop/packages/hadoop-2.9.2.tar.gz dest={{instpath}}
+    - name: create hadoop tmp dir
+      file: dest={{instpath}}/hadoop/tmp mode=0777 state=directory owner={{ansible_ssh_user}}
+    - name: create hadoop journalnode dir
+      file: dest={{instpath}}/hadoop/journaldata mode=0777 state=directory owner={{ansible_ssh_user}}
+### replace configure files
+    - name: replace hadoop-env.xml
+      template: src=/opt/ansible/hadoop/templates/hadoop-env.sh.j2 dest={{instpath}}/hadoop/etc/hadoop/hadoop-env.sh
+    - name: get java home
+#      shell: cat ~/.bash_profile |grep '^export[[:space:]]*JAVA_HOME='|awk -F'=' '{print $2}'
+      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'
+      register: javahome
+    - name: set hadoop jave home
+      lineinfile: path={{instpath}}/hadoop/etc/hadoop/hadoop-env.sh regexp="export JAVA_HOME=" line="export JAVA_HOME={{javahome.stdout}}"
+    - name: replace core-site.xml
+      template: src=/opt/ansible/hadoop/templates/core-site.xml.j2 dest={{instpath}}/hadoop/etc/hadoop/core-site.xml
+    - name: replace hdfs-site.xml
+      template: src=/opt/ansible/hadoop/templates/hdfs-site.xml.j2 dest={{instpath}}/hadoop/etc/hadoop/hdfs-site.xml
+    - name: replace mapred-site.xml
+      template: src=/opt/ansible/hadoop/templates/mapred-site.xml.j2 dest={{instpath}}/hadoop/etc/hadoop/mapred-site.xml
+    - name: replace yarn-site.xml
+      template: src=/opt/ansible/hadoop/templates/yarn-site.xml.j2 dest={{instpath}}/hadoop/etc/hadoop/yarn-site.xml
+    - name: replace master slaves file
+      template: src=/opt/ansible/hadoop/templates/master-slaves.j2 dest={{instpath}}/hadoop/etc/hadoop/slaves
+      when: ansible_ssh_host == firstnode
+    - name: replace second slaves file
+      template: src=/opt/ansible/hadoop/templates/second-slaves.j2 dest={{instpath}}/hadoop/etc/hadoop/slaves
+      when: ansible_ssh_host == secondnode
+### start hadoop
+    - name: start journal node
+      shell: "source ~/.bash_profile;{{instpath}}/hadoop/sbin/hadoop-daemon.sh start journalnode ; sleep 3"
+    - name: get journal status
+      shell: "jps|grep JournalNode|wc -l"
+      register: jouresult
+#      when: ansible_ssh_host == firstnode
+    - name: failed to start journal node
+      fail: msg="start journal node failed ,exit"
+      when: jouresult.stdout == 0
+    - name: format namenode on {{firstnode}}
+      shell: "source ~/.bash_profile;nohup {{instpath}}/hadoop/bin/hdfs namenode -format & sleep 3"
+      when: ansible_ssh_host == firstnode
+      register: mkresult
+    - name: copy master namenode dir to slave namenode
+      shell: "scp -r {{instpath}}/hadoop/tmp {{hostvars[secondnode].ansible_ssh_user}}@{{hostvars[secondnode].hostname}}:/{{instpath}}/hadoop/"
+      when: ansible_ssh_host == firstnode and mkresult.rc == 0
+    - name: format zk cluster on {{firstnode}}
+      shell: "source ~/.bash_profile;nohup echo Y|{{instpath}}/hadoop/bin/hdfs zkfc -formatZK & sleep 3"
+      when: ansible_ssh_host == firstnode
+    - name: run dfs start on firstnode {{firstnode}}
+      shell: "source ~/.bash_profile;{{instpath}}/hadoop/sbin/start-dfs.sh ; sleep 2"
+      when: ansible_ssh_host == firstnode
+    - name: run yarn start on secondnode {{secondnode}}
+      shell: "source ~/.bash_profile;{{instpath}}/hadoop/sbin/start-yarn.sh ; sleep 2"
+      when: ansible_ssh_host == secondnode
+    - name: run yarn start on firstnode {{firstnode}}
+      shell: "source ~/.bash_profile;{{instpath}}/hadoop/sbin/yarn-daemon.sh start resourcemanager ;sleep 2"
+      when: ansible_ssh_host == firstnode
+### check hadoop status
+    - name: check namenode process num
+      shell: jps|grep NameNode|wc -l
+      register: nresult
+      when: ansible_ssh_host == firstnode or ansible_ssh_host == secondnode
+    - name: namenode start success
+      command: echo start namenode success
+      when: (ansible_ssh_host == firstnode and nresult.stdout|int>0) or (ansible_ssh_host == secondnode and nresult.stdout|int>0)
+    - name: namenode start failed
+      fail: msg="start namenode failed"
+      when: (ansible_ssh_host == firstnode and nresult.stdout|int == 0) or (ansible_ssh_host == secondnode and nresult.stdout|int == 0)
+
+    - name: check RM process num
+      shell: jps|grep ResourceManager|wc -l
+      register: rmresult
+    - name: RM start success
+      command: echo start RM success
+      when: (ansible_ssh_host == firstnode and rmresult.stdout|int>0) or (ansible_ssh_host == secondnode and rmresult.stdout|int>0)
+    - name: RM start failed
+      fail: msg="start RM failed"
+      when: (ansible_ssh_host == firstnode and rmresult.stdout|int==0) or (ansible_ssh_host == secondnode and rmresult.stdout|int==0)
+
+    - name: check datanode process num
+      shell: jps|grep DataNode|wc -l
+      register: dresult
+    - name: datanode start success
+      command: echo start datanode success
+      when: dresult.stdout|int>0
+    - name: datanode start failed
+      fail: msg="start datanode failed"
+      when: dresult.stdout|int == 0
+
+    - name: check NodeManager process num
+      shell: jps|grep NodeManager|wc -l
+      register: nmresult
+    - name: NodeManager start success
+      command: echo start NodeManager success
+      when: nmresult.stdout|int>0
+    - name: NodeManager start failed
+      fail: msg="start NodeManager failed"
+      when: nmresult.stdout|int == 0
+
+    - name: check JournalNode process num
+      shell: jps|grep JournalNode|wc -l
+      register: jresult
+    - name: JournalNode start success
+      command: echo start JournalNode success
+      when: jresult.stdout|int>0
+    - name: JournalNode start failed
+      fail: msg="start JournalNode failed"
+      when: jresult.stdout|int == 0

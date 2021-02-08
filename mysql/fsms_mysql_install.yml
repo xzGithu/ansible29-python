@@ -1,0 +1,120 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+### check whether mysql is running
+    - name: check whether mysql is running
+      shell: ps -ef|grep {{ instpath }}/mysql|grep -v ansible|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed mysql
+      #shell: "ps -ef |grep {{ instpath }}/mysql|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="already running mysql on this host"
+      when: result.stdout|int>0  # change to type int
+###check whether mysql exists
+    - name: check whether mysql directory exist
+      stat: 
+        path: '{{ instpath }}/mysql'
+      register: p
+    - name: exit with already installed mysql under path {{instpath}}
+      fail: msg="mysql already installed under this path"
+      when: p.stat.isdir is defined and p.stat.isdir 
+### check install path
+    - name: check whether install path exist
+      stat:
+        path: "{{instpath}}"
+      register: ipath
+    - name: create directory for install path
+      become: yes
+      #become_method: su
+      file: dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: ipath.stat.exists is defined and ipath.stat.exists == False
+      #when: ansible_become_pass is defined and ipath.stat.exists is defined and ipath.stat.exists == False
+    - name: exit with can not make install path
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and ipath.stat.exists is defined and ipath.stat.exists == False
+### configure install users
+    - name: mysql group add
+      become: yes
+      #become_method: su
+      group: 
+        name: mysql
+        state: present
+    - name: mysql user add
+      become: yes
+      #become_method: su
+      user:
+        name: mysql
+        group: mysql
+### install and configure mysql dir
+    - name: install mysql
+      unarchive: src=/opt/ansible/mysql/packages/mysql.tar.gz dest={{instpath}}
+    - name: grant privilege to mysql
+      become: yes
+      #become_method: su
+      file:
+        path: '{{instpath}}/mysql'
+        owner: mysql
+        group: mysql
+        recurse: yes
+        mode: 0777
+    - name: make data dir
+      become: yes
+      #become_method: su
+      file: 
+        path: '{{instpath}}/mysql/data'
+        state: directory
+        owner: mysql
+        group: mysql
+        mode: 0777
+    - name: make log dir
+      become: yes
+      #become_method: su
+      file: 
+        path: '{{instpath}}/mysql/log'
+        state: directory
+        owner: mysql
+        group: mysql
+        mode: 0777
+### initialize the database user password
+    - name: initialize the user password
+      become: yes
+      #become_method: su
+      shell: 'cd {{instpath}}/mysql/bin; ./mysqld --initialize --user=mysql --basedir={{instpath}}/mysql --datadir={{instpath}}/mysql/data '
+      #register: iresult
+    - name: get temporary password
+      become: yes
+      shell: cat {{instpath}}/mysql/log/error.log |grep 'temporary password'|awk '{print $NF}'
+      register: passwd
+    #- name: save initialize password to {{instpath}}/mysql/password.txt {{iresult}}
+    #  become: yes
+    #  shell: echo "{{iresult.stderr}}" > {{instpath}}/mysql/password.txt & sleep 2
+    - name: modify permission to users
+      become: yes
+      file:
+        path: "{{instpath}}/mysql"
+        mode: 0777
+        recurse: yes
+### create my.cnf file
+    - name: generate my.cnf file
+      become: yes
+      #become_method: su
+      template: src=/opt/ansible/mysql/templates/my.cnf.j2 dest=/etc/my.cnf
+### start mysql
+    - name: start mysql
+      #become: yes
+      #become_method: su
+      #become_user: mysql
+      shell: 'cd {{instpath}}/mysql; nohup bin/mysqld_safe --user=mysql & sleep 2'
+    - name: check start status
+      shell: 'ps -ef |grep {{instpath}}/mysql|grep -v grep|grep -v ansible|wc -l'
+      register: presult
+    - name: set password for root user
+      shell: "{{instpath}}/mysql/bin/mysqladmin -uroot -p'{{passwd.stdout}}' password {{password}}"
+      when: presult.stdout|int>0
+    - name: start success
+      command: echo start success
+      when: presult.stdout|int >0
+    - name: start failed
+      fail: msg="mysql start failed"
+      when: presult.stdout|int == 0

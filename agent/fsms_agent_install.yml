@@ -1,0 +1,53 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+### check whether agent is running
+    - name: check whether agent running
+      shell: ps -ef|grep ultraagent|grep {{ansible_ssh_user}}|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed ultrsagent
+      #shell: "ps -ef |grep {{ instpath }}/agent|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="already installed agent on this host"
+      when: result.stdout|int>0  # change to type int
+### check whether agent installed or not
+    - name: check agent directory
+      stat:
+        path: '{{instpath}}/agent'
+      register: agentpath
+    - name: exit with already installed agent under path {{instpath}}
+      fail: msg="agent already installed under this dir"
+      when: agentpath.stat.isdir is defined and agentpath.stat.isdir
+
+    - name: check install directory status
+      stat:
+        path: '{{instpath}}'
+      register: pbig
+    - name: create install directory
+      become: yes
+#      become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create install directory
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+### deploy agent
+    - name: install ultraagent
+      unarchive: src=/opt/ansible/agent/packages/ultraagent.tar.gz dest={{instpath}}
+    - name: replace configure file
+      template: src=/opt/ansible/agent/templates/cfg.json.j2 dest={{instpath}}/agent/config/agent/cfg.json
+### start agent
+    - name: start agent
+      shell: 'nohup {{instpath}}/agent/bin/control start agent & sleep 2'
+    - name: catch process num
+      shell: 'ps -ef |grep ultraagent|grep {{ansible_ssh_user}}|grep -v grep|wc -l'
+      register: presult
+    - name: start success
+      command: echo success
+      when: presult.stdout|int >0
+    - name: start failed
+      fail: msg="agent start failed"
+      when: presult.stdout|int == 0

@@ -1,0 +1,89 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+### check whether nginx is running
+    - name: check whether nginx is running
+      shell: ps -ef|grep {{ instpath }}/nginx|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed nginx
+      #shell: "ps -ef |grep {{ instpath }}/nginx|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="already running nginx on this host"
+      when: result.stdout|int>0  # change to type int
+###check whether nginx
+    - name: check whether nginx directory exist
+      stat: 
+        path: '{{ instpath }}/nginx'
+      register: p
+    - name: exit with already installed nginx under path {{instpath}}
+      fail: msg="nginx already installed under this path"
+      when: p.stat.isdir is defined and p.stat.isdir
+
+    - name: check whether install path exist or not
+      stat: 
+        path: '{{ instpath }}'
+      register: pbig
+    - name: create install path
+      become: yes
+      #become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create {{instpath}} path
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+### install depends software
+    - name: create depends directory
+      become: yes
+      file: dest={{instpath}}/nginx-depends mode=0755 state=directory recurse=yes owner={{ansible_ssh_user}}
+    - name: copy depends soft packages {{item}}
+      copy:
+        src: /opt/ansible/nginx/packages/{{item}}
+        dest: '{{instpath}}/nginx-depends/{{item}}'
+      with_items:
+#        - gcc-4.4.7-23.el6.x86_64.rpm
+        - openssl-1.0.1e-57.el6.x86_64.rpm
+        - openssl-devel-1.0.1e-57.el6.x86_64.rpm
+        - pcre-7.8-7.el6.x86_64.rpm
+        - pcre-devel-7.8-7.el6.x86_64.rpm
+        - zlib-1.2.3-29.el6.x86_64.rpm
+        - zlib-devel-1.2.3-29.el6.x86_64.rpm
+#      task_timeout: 50
+
+    - name: install depends soft packages
+      become: yes
+      shell: 'cd {{instpath}}/nginx-depends;if `rpm -qa|grep -w {{item.split(".")[0:-1]|join(".")}} 1> /dev/null 2>&1`;then echo already installed;else `rpm -i {{item}}`;fi'
+      with_items:
+#        - gcc-4.4.7-23.el6.x86_64.rpm
+        - openssl-1.0.1e-57.el6.x86_64.rpm
+        - openssl-devel-1.0.1e-57.el6.x86_64.rpm
+        - pcre-7.8-7.el6.x86_64.rpm
+        - pcre-devel-7.8-7.el6.x86_64.rpm
+        - zlib-1.2.3-29.el6.x86_64.rpm
+        - zlib-devel-1.2.3-29.el6.x86_64.rpm
+### deploy nginx
+    - name: deploy nginx
+      unarchive: src=/opt/ansible/nginx/packages/nginx-1.16.1.tar.gz dest={{instpath}}
+    - name: build nginx
+      shell: cd {{instpath}}/nginx-1.16.1; ./configure --prefix={{instpath}}/nginx;make && make install
+    - name: remove nginx source files
+      file:
+        path: {{instpath}}/nginx-1.16.1
+        state: absent
+    - name: replace config file 
+      template: src=/opt/ansible/nginx/templates/nginx.conf.j2 dest={{instpath}}/nginx/conf/nginx.conf
+### start nginx
+    - name: start nginx
+      shell: 'nohup {{instpath}}/nginx/sbin/nginx & sleep 2'
+### check whether started
+    - name: catch process nums
+      shell: ps -ef |grep {{instpath}}/nginx|grep -v grep|wc -l
+      register: presult
+    - name: start success
+      command: echo success
+      when: presult.stdout>0
+    - name: start failed
+      fail: msg="nginx start failed"
+      when: presult.stdout==0

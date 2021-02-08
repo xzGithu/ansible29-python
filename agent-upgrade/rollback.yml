@@ -1,0 +1,31 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+    - name: check whether agent process running
+      shell: ps -ef|grep ultraagent|grep {{ansible_ssh_user}}|grep -v grep|wc -l
+      register: result
+    - name: kill running agent process
+      shell: ps -ef|grep ultraagent|grep {{ansible_ssh_user}}|grep -v grep|awk '{print $2}'|xargs kill -9
+      when: result.stdout|int>0
+
+    - name: rollback new ultraagent directory
+      file:
+        path: '{{instpath}}'
+        state: absent
+    - name: resotre old ultraagent directory
+      shell: mv {{prepath}}/agent-backup {{prepath}}/agent
+
+    - name: start old ultraagent process
+      shell: 'nohup {{prepath}}/agent/bin/control start agent & sleep 2'
+
+    - name: catch process num
+      shell: 'ps -ef |grep ultraagent|grep {{ansible_ssh_user}}|grep -v grep|wc -l'
+      register: presult
+    - name: start old ultraagent success
+      command: echo success
+      when: presult.stdout|int >0
+    - name: rollback ultraagent failed
+      fail: msg="agent start failed"
+      when: presult.stdout|int == 0

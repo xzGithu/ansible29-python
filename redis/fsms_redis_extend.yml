@@ -1,0 +1,85 @@
+---
+- hosts: groups
+  gather_facts: no
+  become: no
+  tasks:
+
+### check whether redis is running
+    - name: check redis running
+      shell: ps -ef|grep redis-server|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed redis
+      fail: msg="redis already install on this host"
+      when: result.stdout|int>0  # change to type int
+### check whether redis exists
+    - name: check redis dir
+      stat: 
+        path: '{{ instpath }}/redis'
+      register: p
+    - name: exit with already installed redis under path {{instpath}}
+      fail: msg="already install redis under this dir. To install give a new dir"
+      when: p.stat.isdir is defined and p.stat.isdir
+
+### make bigdata dir
+    - name: check bighome dir
+      stat: 
+        path: '{{ instpath }}'
+      register: pbig
+      #when: ansible_become_pass is defined
+    - name: mkdir ditectory for bigdata home
+      become: yes
+      #become_method: su
+      file: >-
+        dest={{instpath}} mode=0777 state=directory owner={{ansible_ssh_user}}
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with cant mkdir
+      fail: msg="no permission to mkdir"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+
+### deploy redis
+    - name: install redis
+      unarchive: src=/opt/ansible/redis/packages/redis.tgz dest={{instpath}}
+### configure redis
+    - name: config redis.conf
+      template: src=/opt/ansible/redis/templates/redis.conf.j2 dest={{instpath}}/redis/redis.conf
+    - name: create data directory
+      file: dest={{datapath}} mode=0755 state=directory owner={{ansible_ssh_user}} recurse=yes
+    - name: change owner and group
+      file: path={{instpath}}/redis recurse=yes
+### start redis
+    - name: start redis
+      shell: "cd {{instpath}}/redis; nohup ./src/redis-server redis.conf & sleep 2" # add a sleep to let the nohup start exactly
+    - name: wait for 30s
+      pause:
+        seconds: 30
+### check whether started
+    - name: check process
+      shell: "ps -ef|grep redis-server|grep -v grep|wc -l"
+      register: presult
+    - name: start success
+      shell: echo redis start successfully
+      when: presult.stdout|int > 0
+    - name: start failed
+      fail: msg="redis start failed"
+      when: presult.stdout|int == 0
+### add node to cluster
+#    - name: cluster ips generate
+#      set_fact:
+#        cluster_address: |-
+#         [
+#           {% set prehosts = groups.groups %}
+#           {% for host in prehosts -%}
+#             {% set pre_ip = hostvars[host].inventory_hostname | default(host) -%}
+#             {% set pre_port = hostvars[host].port -%}
+#             "{{ pre_ip }}:{{ pre_port }} "
+#           {% endfor -%}
+#         ]
+#- hosts: pregroup
+#  become: no
+#  gather_facts: no
+#  tasks:
+#    - name: add nodes to redis cluster
+#      shell: "cd {{inspath}}/redis; echo yes|./src/redis-cli --cluster create {{cluster_address[0]}} --cluster-replicas 1 -a {{masterpasswd}}"
+#      register: clusterresult
+#      run_once: true

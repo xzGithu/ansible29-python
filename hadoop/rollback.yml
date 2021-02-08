@@ -1,0 +1,23 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+
+    - name: check whether hadoop process running
+      shell: ps -ef |grep {{instpath}}|grep -v ansible|grep -v hbase|grep {{ansible_ssh_user}}|grep -v grep|wc -l
+      register: result
+    - name: kill running process which start from {{instpath}}
+      shell: ps -ef|grep {{instpath}}|grep -v ansible|grep -v hbase|grep {{ansible_ssh_user}}|grep -v grep|awk '{print $2}'|xargs kill -9
+      when: result.stdout|int>0
+
+    - name: rollback /etc/hosts file
+      shell: if `ls /etc/hosts.ansible.hadoop 1> /dev/null 2>&1`;then `echo y|mv /etc/hosts.ansible.hadoop /etc/hosts`; fi;
+    - name: rollback bash_profile
+      shell: if `ls ~/.bash_profile.ansible.hadoop 1> /dev/null 2>&1`;then `echo y|mv ~/.bash_profile.ansible.hadoop ~/.bash_profile; source ~/.bash_profile`; fi;
+
+    - name: rollback dirs {{instpath}}
+      #shell: rm -rf {{instpath}}
+      file:
+        path: '{{instpath}}'
+        state: absent

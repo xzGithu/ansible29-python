@@ -1,0 +1,21 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+
+    - name: check whether flink process running
+      shell: ps -ef |grep {{instpath}}|grep -v ansible|grep -v grep|wc -l
+      register: result
+    - name: kill running process which start from {{instpath}}
+      shell: ps -ef|grep {{instpath}}|grep -v ansible|grep -v grep|awk '{print $2}'|xargs kill -9
+      when: result.stdout|int>0
+
+    - name: rollback dirs {{instpath}}
+      file:
+        path: '{{instpath}}'
+        state: absent
+
+    - name: rollback bash_profile
+#      shell: echo y| mv ~/.bash_profile.ansible.flink ~/.bash_profile; source ~/.bash_profile
+      shell: if `ls ~/.bash_profile.ansible.flink 1> /dev/null 2>&1`;then `echo y|mv ~/.bash_profile.ansible.flink ~/.bash_profile; source ~/.bash_profile`; fi;

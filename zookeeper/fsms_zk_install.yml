@@ -1,0 +1,115 @@
+---
+- hosts: groups
+  become: no
+  gather_facts: no
+  tasks:
+### task start
+### check whether zookeeper is running
+    - name: check zookeeper running from {{instpath}}/zookeeper
+      shell: ps -ef|grep {{ instpath }}/zookeeper|grep -v grep|wc -l
+      register: result
+    - name: exit with already installed zookeeper
+      #shell: "ps -ef |grep {{ instpath }}/zookeeper|grep -v grep |awk '{print $2}'|xargs kill -9"
+      fail: msg="already installed zookeeper on this host"
+      when: result.stdout|int>0  # change to type int
+### check whether zookeeper exists
+    - name: check whether zookeeper directory exist
+      stat: 
+        path: '{{ instpath }}/zookeeper'
+      register: p
+    - name: exit with already installed zookeeper under path {{instpath}}
+      fail: msg="already install zookeeper under this dir. To install give a new dir"
+      when: p.stat.isdir is defined and p.stat.isdir
+### make install path
+    - name: check whether exist {{instpath}}
+      stat: 
+        path: '{{ instpath }}'
+      register: pbig
+    - name: create {{instpath}}
+      become: yes
+      #become_method: su
+      file: >-
+        dest={{ instpath }} mode=0777 state=directory owner={{ ansible_ssh_user }}
+      when: pbig.stat.exists is defined and pbig.stat.exists == False
+      #when: ansible_become_pass is defined and pbig.stat.exists is defined and pbig.stat.exists == False
+    - name: exit with can not create install path
+      fail: msg="no permission to create {{instpath}}"
+      when: ansible_become_pass is not defined and pbig.stat.exists is defined and pbig.stat.exists == False
+### configure hosts file
+    - name: backup /etc/hosts
+      become: yes
+      shell: echo y|cp /etc/hosts /etc/hosts.ansible.zk
+    - name: configure /etc/hosts
+      become: yes
+      #become_method: su
+      lineinfile: 
+        dest: /etc/hosts
+        state: present
+        line: "{{ ansible_ssh_host }} {{ hostname }}"
+      #when: ansible_become_pass is defined
+
+### install java
+    - name: check java env
+      #shell: 'java -version'
+      shell: cat ~/.bash_profile|grep -E '^JAVA_HOME[[:space:]]*=|^export[[:space:]]*JAVA_HOME[[:space:]]*='|tail -n -1|awk -F'=' '{print $2}'|wc -l
+      ignore_errors: yes
+      register: javaenv
+    - name: backup bash_profile
+      shell: echo y|cp ~/.bash_profile ~/.bash_profile.ansible.zk
+      when: javaenv.stdout|int==0
+    - name: install java
+      unarchive: src=/opt/ansible/jdk/jdk.tar.gz dest={{ instpath }}
+      when: javaenv.stdout|int==0
+    - name: set java env 
+      lineinfile: path=~/.bash_profile regexp="{{item.position}}" line="{{item.value}}" state=present insertbefore="^export PATH=(.*)"
+      with_items:
+        - {position: "^export JAVA_HOME=(.*)", value: "export JAVA_HOME={{instpath}}/jdk"}
+      when: javaenv.stdout|int==0
+    - name: set path env 
+      lineinfile: path=~/.bash_profile line="{{item.value}}"  insertafter="^export PATH=(.*)"
+      with_items:
+        - {position: "export PATH=", value: "export PATH=$JAVA_HOME/bin:$PATH"}
+      when: javaenv.stdout|int==0
+    - name: update permission for java/bin # modify 
+      file: dest={{instpath}}/jdk/bin mode=0755 recurse=yes
+      when: javaenv.stdout|int==0
+    - name: flush bash_profile #flush env
+      shell: source ~/.bash_profile
+      when: javaenv.stdout|int==0
+### deploy zookeeper
+    - name: install zookeeper
+      unarchive: src=/opt/ansible/zookeeper/packages/zookeeper.tar.gz dest={{instpath}}
+### configure zookeeper
+    - name: install configuration file for zookeeper
+      template: src=/opt/ansible/zookeeper/templates/zoo.cfg.j2 dest={{instpath}}/zookeeper/conf/zoo.cfg
+    - name: copy zkServer.sh for zookeeper
+      template: src=/opt/ansible/zookeeper/templates/zkServer.sh.j2 dest={{instpath}}/zookeeper/bin/zkServer.sh
+    - name: change owner and group for zkServer.sh
+      file: path={{instpath}}/zookeeper/bin/zkServer.sh mode=0775 owner={{ansible_ssh_user}}
+    - name: create datalog directory
+      file: dest={{instpath}}/zookeeper/dataLogDir mode=0755 state=directory owner={{ansible_ssh_user}} recurse=yes
+    - name: create data directory
+      file: dest={{datapath}} mode=0755 state=directory owner={{ansible_ssh_user}} recurse=yes
+    - name: create logs directory
+      file: dest={{instpath}}/zookeeper/logs mode=0755 state=directory owner={{ansible_ssh_user}} recurse=yes
+    - name: copy myid file for zookeeper
+      template: src=/opt/ansible/zookeeper/templates/zkmyid.j2 dest={{instpath}}/zookeeper/data/myid
+    - name: change owner and group for zookeeper
+      file: path={{instpath}}/zookeeper owner={{ansible_ssh_user}} recurse=yes
+### start zookeeper
+    - name: start zookeeper
+      #shell: 'cd {{instpath}}/zookeeper/bin;nohup ./zkServer.sh start &'
+      shell: 'source ~/.bash_profile;cd {{instpath}}/zookeeper/bin;nohup ./zkServer.sh start & sleep 3'
+    - name: wait for 5s
+      pause:
+        seconds: 5
+### check if started
+    - name: catch zookeeper process numbers
+      shell: "ps -ef|grep {{instpath}}/zookeeper|grep -v grep|wc -l"
+      register: presult
+    - name: start success
+      shell: echo elasticsearch started
+      when: presult.stdout|int > 0
+    - name: start failed
+      fail: msg="zookeeper start failed"
+      when: presult.stdout|int == 0
